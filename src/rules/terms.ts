@@ -86,12 +86,16 @@ export function deriveNames(docs: DocumentFacts[]): DerivedName[] {
   const out: DerivedName[] = []
   const seen = new Set<string>()
   for (const doc of docs) {
-    const fields: Array<[string, string]> = [
-      ...Object.entries(doc.info).map(([k, v]): [string, string] => [`Info.${k}`, v]),
-      ...Object.entries(doc.xmp ?? {}).map(([k, v]): [string, string] => [`XMP.${k}`, v]),
+    // 增量保存的旧版本里的作者名同样算数：改稿时删掉了元数据，正文里可能还有
+    const fields: Array<[string, string, string]> = [
+      ...Object.entries(doc.info).map(([k, v]): [string, string, string] => [`Info.${k}`, k, v]),
+      ...Object.entries(doc.xmp ?? {}).map(([k, v]): [string, string, string] => [`XMP.${k}`, k, v]),
+      ...(doc.binary?.oldRevisions ?? []).flatMap((r) => [
+        ...Object.entries(r.info).map(([k, v]): [string, string, string] => [`旧版本 ${r.index} 的 Info.${k}`, k, v]),
+        ...Object.entries(r.xmp ?? {}).map(([k, v]): [string, string, string] => [`旧版本 ${r.index} 的 XMP.${k}`, k, v]),
+      ]),
     ]
-    for (const [field, value] of fields) {
-      const bare = field.replace(/^(?:Info|XMP)\./, '')
+    for (const [field, bare, value] of fields) {
       if (!AUTHOR_FIELDS.some((re) => re.test(bare))) continue
       for (const name of splitNames(value)) {
         if (!plausibleName(name)) continue

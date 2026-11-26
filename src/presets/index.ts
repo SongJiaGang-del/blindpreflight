@@ -111,6 +111,11 @@ export const PRESETS: VenuePreset[] = [
     disabledRuleIds: [],
     severityOverrides: {},
     limitations: COMMON_LIMITS,
+    templateMarker: {
+      pattern: String.raw`Under\s+review\s+as\s+a\s+conference\s+paper\s+at\s+ICLR`,
+      label: 'Under review as a conference paper at ICLR',
+      suggestion: String.raw`使用 ICLR 官方模板的默认（投稿）模式，不要加 \iclrfinalcopy。`,
+    },
   },
   {
     id: 'cvpr-2026',
@@ -121,19 +126,24 @@ export const PRESETS: VenuePreset[] = [
     version: '2026.1',
     verifiedAt: VERIFIED_AT,
     verificationStatus: 'partial',
-    implementationStatus: 'reference',
+    implementationStatus: 'implemented',
     summary: [
       '使用 review 模式模板（含行号与 Paper ID），不写作者与致谢。',
       '补充材料与视频同样需要匿名。',
-      '本预设只提供条款摘要；检查按通用规则执行。',
+      '本预设：致谢按“禁止”处理，资助信息升为高优先级，并检查审稿模板标记。',
     ],
     sources: [{ label: 'CVPR 2026 Author Guidelines', url: 'https://cvpr.thecvf.com/Conferences/2026/AuthorGuidelines', section: 'Blind review' }],
-    ackPolicy: 'noIdentity',
+    ackPolicy: 'forbidden',
     flagAllEmbeddedLinks: false,
     linkNote: null,
     disabledRuleIds: [],
-    severityOverrides: {},
-    limitations: [...COMMON_LIMITS, '未实现：Paper ID、行号等模板格式检查。'],
+    severityOverrides: { R06: 'high' },
+    limitations: [...COMMON_LIMITS, '未实现：行号与 Paper ID 数字本身的检查；补充视频需人工核对。'],
+    templateMarker: {
+      pattern: String.raw`CONFIDENTIAL\s+REVIEW\s+COPY|Submission\s*#`,
+      label: 'CVPR 20xx Submission #… CONFIDENTIAL REVIEW COPY',
+      suggestion: String.raw`使用 CVPR 官方模板的 review 模式（\usepackage[review]{cvpr}）并填入 Paper ID。`,
+    },
   },
   {
     id: 'mobicom-2026',
@@ -166,16 +176,19 @@ export const PRESETS: VenuePreset[] = [
     version: '2026.1',
     verifiedAt: VERIFIED_AT,
     verificationStatus: 'partial',
-    implementationStatus: 'reference',
-    summary: ['双盲；不在投稿中写作者、致谢与可识别的资助信息。', '本预设只提供条款摘要；检查按通用规则执行。'],
+    implementationStatus: 'implemented',
+    summary: [
+      '双盲；不在投稿中写作者、致谢与可识别的资助信息。',
+      '本预设：致谢按“禁止”处理，资助信息升为高优先级。',
+    ],
     sources: [
       { label: 'USENIX Security ’26 Call for Papers', url: 'https://www.usenix.org/conference/usenixsecurity26/call-for-papers', section: 'Anonymity' },
     ],
-    ackPolicy: 'noIdentity',
+    ackPolicy: 'forbidden',
     flagAllEmbeddedLinks: false,
     linkNote: null,
     disabledRuleIds: [],
-    severityOverrides: {},
+    severityOverrides: { R06: 'high' },
     limitations: [...COMMON_LIMITS, '未实现：伦理附录与 Open Science 附录的专项检查。'],
   },
   {
@@ -187,22 +200,45 @@ export const PRESETS: VenuePreset[] = [
     version: '2026.1',
     verifiedAt: VERIFIED_AT,
     verificationStatus: 'partial',
-    implementationStatus: 'reference',
-    summary: ['双盲；作者信息、致谢、资助在投稿版中删除。', '本预设只提供条款摘要；检查按通用规则执行。'],
+    implementationStatus: 'implemented',
+    summary: [
+      '双盲；作者信息、致谢、资助在投稿版中删除。',
+      '本预设：致谢按“禁止”处理，资助信息升为高优先级，并检查 acmart 匿名模式标记。',
+    ],
     sources: [
       { label: 'CCS 2026 Call for Papers', url: 'https://www.sigsac.org/ccs/CCS2026/call-for/call-for-papers.html', section: 'Anonymous submission' },
     ],
-    ackPolicy: 'noIdentity',
+    ackPolicy: 'forbidden',
     flagAllEmbeddedLinks: false,
     linkNote: null,
     disabledRuleIds: [],
-    severityOverrides: {},
-    limitations: COMMON_LIMITS,
+    severityOverrides: { R06: 'high' },
+    limitations: [...COMMON_LIMITS, '未实现：页数与 ACM 格式检查。'],
+    templateMarker: {
+      pattern: String.raw`Anonymous\s+Authors?\s*\(s\)|Anonymous\s+Author`,
+      label: 'Anonymous Author(s)（acmart 的 anonymous 选项）',
+      suggestion: String.raw`使用 \documentclass[sigconf,review,anonymous]{acmart}，由模板自动隐去作者信息。`,
+    },
   },
 ]
 
-export function getPreset(id: string): VenuePreset {
+/** 自定义预设（由会话从 localStorage 载入后登记）；内置预设列表保持不变 */
+let customPresets: VenuePreset[] = []
+
+export function setCustomPresets(list: VenuePreset[]): void {
+  customPresets = list
+}
+
+export function allPresets(): VenuePreset[] {
+  return [...PRESETS, ...customPresets]
+}
+
+export function getBuiltinPreset(id: string): VenuePreset {
   return PRESETS.find((p) => p.id === id) ?? (PRESETS[0] as VenuePreset)
+}
+
+export function getPreset(id: string): VenuePreset {
+  return PRESETS.find((p) => p.id === id) ?? customPresets.find((p) => p.id === id) ?? (PRESETS[0] as VenuePreset)
 }
 
 /** 每条规则在当前预设下引用的条款 */

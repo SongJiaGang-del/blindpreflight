@@ -28,6 +28,8 @@ const counts = computed(() => {
     annot: fs.filter((f) => f.source === 'annotation').length,
     attach: fs.filter((f) => f.source === 'attachment').length,
     link: fs.filter((f) => f.source === 'link').length,
+    image: fs.filter((f) => f.source === 'image').length,
+    revision: fs.filter((f) => f.source === 'revision').length,
   }
 })
 
@@ -116,12 +118,15 @@ function kb(n: number) {
           <n-checkbox v-model:checked="opts.attachments" :disabled="phase === 'working'">
             嵌入附件 <span class="hit">{{ counts.attach ? `${counts.attach} 条发现` : '' }}</span>
           </n-checkbox>
+          <n-checkbox v-model:checked="opts.imageMetadata" :disabled="phase === 'working'">
+            图片元数据：EXIF / IPTC / XMP、GPS 位置、设备序列号 <span class="hit">{{ counts.image ? `${counts.image} 条发现` : '' }}</span>
+          </n-checkbox>
           <n-checkbox v-model:checked="opts.externalLinks" :disabled="phase === 'working'">
             外部链接的可点击目标（文字保留，只是不能再点击） <span class="hit">{{ counts.link ? `${counts.link} 条链接发现` : '' }}</span>
           </n-checkbox>
         </div>
         <div class="muted small">
-          另外会删除文件中没被引用的残留对象（例如增量保存留下的旧版本内容），保证被删掉的信息不会留在新文件的字节里。全部在本机完成，不经过网络。
+          另外会把增量保存的多个版本合并成一个<template v-if="counts.revision">（本文件有 {{ counts.revision }} 条旧版本相关发现）</template>，并删除没被引用的残留对象，保证被删掉的信息不会留在新文件的字节里。字体名无法自动改写。全部在本机完成，不经过网络。
         </div>
         <n-alert v-if="phase === 'error'" type="error" :bordered="false">{{ error }}</n-alert>
       </template>
@@ -147,6 +152,7 @@ function kb(n: number) {
           <li v-if="out.report.annotationsRemoved">删除批注 {{ out.report.annotationsRemoved }} 个（{{ Object.entries(out.report.annotationTypes).map(([k, v]) => `${k} ${v}`).join('、') }}）</li>
           <li v-if="out.report.linksRemoved">删除外部链接目标 {{ out.report.linksRemoved }} 个</li>
           <li v-if="out.report.attachmentsRemoved">删除嵌入附件 {{ out.report.attachmentsRemoved }} 个</li>
+          <li v-if="out.report.imagesCleaned">去掉 {{ out.report.imagesCleaned }} 张图片的元数据</li>
           <li v-if="out.report.orphansRemoved">回收残留对象 {{ out.report.orphansRemoved }} 个</li>
         </ul>
         <div class="groups">
@@ -179,7 +185,7 @@ function kb(n: number) {
             type="primary"
             data-testid="clean-run"
             :loading="phase === 'working'"
-            :disabled="!opts.metadata && !opts.annotations && !opts.attachments && !opts.externalLinks"
+            :disabled="!opts.metadata && !opts.annotations && !opts.attachments && !opts.externalLinks && !opts.imageMetadata"
             @click="run"
           >
             生成并复检

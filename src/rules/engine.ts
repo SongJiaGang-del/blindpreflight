@@ -28,6 +28,7 @@ import { ruleArxivStamp, ruleHeaderFooter } from './layout'
 import { linkTargetsMatch, ruleEmbeddedLinks, ruleUrls } from './links'
 import { ruleAcknowledgments, ruleFunding, ruleImplicitIdentity, ruleSelfCitation } from './sections'
 import { deriveNames } from './terms'
+import { ruleFontNames, ruleImageMetadata, ruleRevisions, ruleTemplateMarker } from './binary'
 
 type RuleFn = (doc: DocumentFacts, ctx: RuleContext) => FindingDraft[]
 
@@ -54,6 +55,10 @@ export const RULES: RuleDef[] = [
   { id: 'R13', title: '批注与编辑残留', description: '批注作者 / 内容、表单域值、TODO / 待修改。', fns: [ruleAnnotations, ruleTextResidue] },
   { id: 'R15', title: 'ORCID 与本地路径', description: 'ORCID iD、C:\\Users\\name 等本机路径。', fns: [ruleOrcidPath] },
   { id: 'R17', title: '嵌入附件', description: 'PDF 内嵌文件（只检查文件名与描述）。', fns: [ruleAttachments] },
+  { id: 'R18', title: '图片元数据', description: '嵌入图片的 EXIF / IPTC / XMP：作者、版权、设备序列号、GPS 位置、描述文字。', fns: [ruleImageMetadata] },
+  { id: 'R19', title: '字体名', description: '页面字体名中的作者名、自定义词或机构词。', fns: [ruleFontNames] },
+  { id: 'R20', title: '增量保存的旧版本', description: '文件中残留的旧版本元数据（如改稿前的作者名）与保存版本数。', fns: [ruleRevisions] },
+  { id: 'R21', title: '会场模板标记', description: '审稿模式模板应印出的标记（如 CVPR 的 Submission # 与 CONFIDENTIAL REVIEW COPY）。', fns: [ruleTemplateMarker] },
 ]
 
 export function ruleTitle(id: string): string {

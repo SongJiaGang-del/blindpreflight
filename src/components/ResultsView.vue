@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { NButton, NSelect, useMessage } from 'naive-ui'
 import type { FindingCategory, ReviewStatus, ScanResult, Severity } from '@/domain/types'
 import { REVIEW_LABEL, isDismissed } from '@/domain/labels'
-import { PRESETS } from '@/presets'
 import { SLOT_LABEL, type SlotId, useSession } from '@/app/session'
 import ResultsSummary from './ResultsSummary.vue'
 import FindingList from './FindingList.vue'
@@ -45,7 +44,7 @@ const mobileTab = ref<'findings' | 'page'>('findings')
 /** 界面上的文件标签不用文件名，避免截图或录屏时泄露 */
 const docLabels = computed(() => Object.fromEntries(props.result.documents.map((d) => [d.id, SLOT_LABEL[d.id as SlotId] ?? d.id])))
 
-const presetOptions = PRESETS.map((p) => ({ value: p.id, label: `${p.venue}${p.year ? ` ${p.year}` : ''}` }))
+const presetOptions = computed(() => s.presetList.value.map((p) => ({ value: p.id, label: `${p.venue}${p.year ? ` ${p.year}` : ''}${p.custom ? '（自定义）' : ''}` })))
 
 function changePreset(id: string) {
   s.setPreset(id)

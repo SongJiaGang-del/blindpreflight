@@ -28,6 +28,10 @@ export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   editResidue: '编辑残留',
   attachment: '附件',
   identifier: '编号 / 戳记',
+  imageMetadata: '图片元数据',
+  fontName: '字体名',
+  revision: '旧版本残留',
+  template: '会场模板',
 }
 
 export const SOURCE_LABEL: Record<FindingSource, string> = {
@@ -37,6 +41,9 @@ export const SOURCE_LABEL: Record<FindingSource, string> = {
   annotation: '批注 / 表单',
   filename: '文件名',
   attachment: '嵌入附件',
+  image: '嵌入图片',
+  font: '字体资源',
+  revision: '增量保存的旧版本',
 }
 
 export const REVIEW_LABEL: Record<ReviewStatus, string> = {

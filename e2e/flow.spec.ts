@@ -158,3 +158,26 @@ test('清理 PDF → 复检 → 替换并重新检查 → 与上一版对比，�
   expect(net.nonGet).toEqual([])
   expect(net.errors).toEqual([])
 })
+
+test('自定义预设：新建 → 选中 → 检查生效；本地只存规则设置', async ({ page }) => {
+  const net = await guardNetwork(page)
+  await page.goto('/')
+  await page.getByTestId('preset-new').click()
+  await expect(page.getByTestId('preset-editor')).toBeVisible()
+  await page.getByTestId('preset-name').locator('input').fill('My Workshop')
+  await page.getByTestId('preset-save').click()
+  await expect(page.getByTestId('preset-editor')).toBeHidden()
+  await expect(page.getByTestId('preset-select')).toContainText('My Workshop')
+
+  await page.getByTestId('slot-main-input').setInputFiles(`${SAMPLES}sample-leaky.pdf`)
+  await page.getByTestId('start-scan').click()
+  await expect(page.getByTestId('finding-list')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('verdict-stamp')).toBeVisible()
+
+  const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }))
+  expect(stored).toContain('My Workshop')
+  expect(stored).not.toMatch(/Widget|Alex|sample-leaky/i)
+  expect(net.external).toEqual([])
+  expect(net.nonGet).toEqual([])
+  expect(net.errors).toEqual([])
+})

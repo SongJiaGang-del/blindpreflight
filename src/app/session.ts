@@ -15,7 +15,9 @@ import { browserAssets, loadPdfjs } from '@/parsers/pdf/pdfjs-browser'
 import { validateSelection } from '@/parsers/pdf/validate'
 import { runScan } from '@/rules/engine'
 import { deriveNames, parseUserTerms } from '@/rules/terms'
-import { PRESETS } from '@/presets'
+import { PRESETS, allPresets, getBuiltinPreset, setCustomPresets } from '@/presets'
+import { type CustomPresetSpec, loadCustomSpecs, saveCustomSpecs, toPreset } from '@/presets/custom'
+import { RULES } from '@/rules/engine'
 import { type Comparison, compareScans, compareTags, migrateDecisions } from './compare'
 
 export type Phase = 'idle' | 'reading' | 'parsing' | 'scanning' | 'done' | 'error' | 'cancelled'
@@ -32,7 +34,7 @@ function loadPrefs(): Prefs {
   try {
     const raw = globalThis.localStorage?.getItem(PREF_KEY)
     const p = raw ? (JSON.parse(raw) as Partial<Prefs>) : {}
-    const presetId = typeof p.presetId === 'string' && PRESETS.some((x) => x.id === p.presetId) ? p.presetId : 'generic'
+    const presetId = typeof p.presetId === 'string' && allPresets().some((x) => x.id === p.presetId) ? p.presetId : 'generic'
     return { presetId }
   } catch {
     return { presetId: 'generic' }
@@ -50,6 +52,15 @@ function savePrefs(p: Prefs): void {
 function fingerprint(f: File): string {
   return `${f.name}|${f.size}|${f.lastModified}`
 }
+
+/* ---------- 自定义预设（必须在读取偏好之前登记） ---------- */
+const RULE_IDS = RULES.map((r) => r.id)
+const BASE_IDS = PRESETS.map((p) => p.id)
+const customSpecs = shallowRef<CustomPresetSpec[]>(loadCustomSpecs(RULE_IDS, BASE_IDS))
+function applyCustom(): void {
+  setCustomPresets(customSpecs.value.map((sp) => toPreset(sp, getBuiltinPreset(sp.baseId))))
+}
+applyCustom()
 
 export const SLOT_LABEL: Record<SlotId, string> = { main: '主稿', 'supp-1': '补充材料 1', 'supp-2': '补充材料 2' }
 
@@ -137,7 +148,7 @@ function addFiles(files: File[]): void {
 }
 
 function setPreset(id: string): void {
-  if (!PRESETS.some((p) => p.id === id)) return
+  if (!allPresets().some((p) => p.id === id)) return
   state.presetId = id
   savePrefs({ presetId: id })
 }
@@ -331,6 +342,29 @@ async function previewScan(slot: SlotId, bytes: Uint8Array): Promise<ScanResult>
   }
 }
 
+function commitCustom(list: CustomPresetSpec[]): void {
+  customSpecs.value = list
+  saveCustomSpecs(list)
+  applyCustom()
+  if (!allPresets().some((p) => p.id === state.presetId)) setPreset('generic')
+}
+
+function upsertCustomPreset(spec: CustomPresetSpec): void {
+  const list = customSpecs.value.filter((x) => x.id !== spec.id)
+  commitCustom([...list, spec])
+}
+
+function removeCustomPreset(id: string): void {
+  commitCustom(customSpecs.value.filter((x) => x.id !== id))
+}
+
+/** 导入：同 id 覆盖，其余追加 */
+function importCustomPresets(list: CustomPresetSpec[]): number {
+  const ids = new Set(list.map((x) => x.id))
+  commitCustom([...customSpecs.value.filter((x) => !ids.has(x.id)), ...list])
+  return list.length
+}
+
 function dismissComparison(): void {
   comparison.value = null
 }
@@ -347,6 +381,10 @@ export function getPdf(docId: string): PDFDocumentProxy | null {
 const busy = computed(() => state.phase === 'reading' || state.phase === 'parsing' || state.phase === 'scanning')
 const selectedFinding = computed(() => result.value?.findings.find((f) => f.id === state.selectedFindingId) ?? null)
 const compareTag = computed(() => compareTags(comparison.value))
+const presetList = computed(() => {
+  void customSpecs.value
+  return allPresets()
+})
 const filesChangedSinceScan = computed(() => result.value != null && selectedFingerprints() !== lastFingerprints)
 
 export function useSession() {
@@ -358,6 +396,13 @@ export function useSession() {
     filesChangedSinceScan,
     comparison,
     compareTag,
+    presetList,
+    customSpecs,
+    upsertCustomPreset,
+    removeCustomPreset,
+    importCustomPresets,
+    ruleIds: RULE_IDS,
+    baseIds: BASE_IDS,
     dismissComparison,
     toggleChecked,
     rescanWith,

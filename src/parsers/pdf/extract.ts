@@ -7,6 +7,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type {
   AnnotationFact,
   AttachmentFact,
+  BinaryFacts,
   CoverageEntry,
   DocumentFacts,
   DocumentRole,
@@ -19,6 +20,7 @@ import { buildPage } from '@/normalize/layout'
 import { assignZones } from '@/normalize/zones'
 import type { RawPage, RawTextItem } from '@/normalize/raw'
 import { validatePdfBytes } from './validate'
+import { scanBinary } from './binary'
 
 export type PdfjsLib = typeof Pdfjs
 
@@ -168,6 +170,14 @@ async function openDocument(lib: PdfjsLib, bytes: Uint8Array, assets?: PdfAssets
 export async function extractDocument(input: ExtractInput, opts: ExtractOptions): Promise<ExtractResult> {
   validatePdfBytes(input.bytes)
   checkAbort(opts.signal)
+  // 先读对象层（图片元数据、字体、旧版本）：pdf.js 打开后可能转移缓冲区
+  let binary: BinaryFacts | undefined
+  try {
+    binary = await scanBinary(input.bytes)
+  } catch {
+    binary = undefined
+  }
+  checkAbort(opts.signal)
   const pdf = await openDocument(opts.lib, input.bytes, opts.assets)
   try {
     checkAbort(opts.signal)
@@ -275,8 +285,23 @@ export async function extractDocument(input: ExtractInput, opts: ExtractOptions)
       failedAnnots.length ? `${failedAnnots.length} 页注释读取失败。` : '已检查批注作者、内容与表单域值。',
       failedAnnots.length ? failedAnnots : undefined,
     )
-    cov('images', 'unsupported', '不检查图片中的文字（无 OCR）与图片 EXIF。')
-    cov('hiddenContent', 'unsupported', '不检测白色文字、被遮挡文字、可选内容层（OCG）中隐藏的内容与增量更新的旧版本。')
+    if (binary) {
+      cov(
+        'images',
+        'partial',
+        `已检查 ${binary.imageCount} 张嵌入图片的 EXIF / IPTC / XMP 元数据${binary.images.length ? `（${binary.images.length} 张带元数据）` : ''}；图片中的文字没有检查（无 OCR）。`,
+      )
+      cov(
+        'hiddenContent',
+        'partial',
+        binary.revisionCount > 1
+          ? `文件有 ${binary.revisionCount} 个保存版本，已检查旧版本的元数据；旧版本的正文、白色 / 被遮挡文字与可选内容层（OCG）没有检查。`
+          : '没有增量保存的旧版本；白色 / 被遮挡文字与可选内容层（OCG）没有检查。',
+      )
+    } else {
+      cov('images', 'failed', '无法读取图片对象，图片元数据没有检查；图片中的文字也没有检查（无 OCR）。')
+      cov('hiddenContent', 'unsupported', '无法读取对象层：增量保存的旧版本、白色 / 被遮挡文字与可选内容层（OCG）都没有检查。')
+    }
 
     const parseStatus: DocumentFacts['parseStatus'] =
       failedText.length === pageCount ? 'failed' : failedText.length > 0 || failedAnnots.length > 0 ? 'partial' : 'completed'
@@ -295,6 +320,7 @@ export async function extractDocument(input: ExtractInput, opts: ExtractOptions)
       internalLinkCount,
       coverage,
       warnings,
+      ...(binary ? { binary } : {}),
     }
     return { facts, pdf }
   } catch (err) {

@@ -11,7 +11,7 @@ export type DocumentRole = 'main' | 'supplement'
 export type Severity = 'high' | 'medium' | 'info'
 export type Confidence = 'high' | 'medium' | 'low'
 
-export type FindingSource = 'metadata' | 'text' | 'link' | 'annotation' | 'filename' | 'attachment'
+export type FindingSource = 'metadata' | 'text' | 'link' | 'annotation' | 'filename' | 'attachment' | 'image' | 'font' | 'revision'
 
 export type FindingCategory =
   | 'metadata'
@@ -30,6 +30,10 @@ export type FindingCategory =
   | 'editResidue'
   | 'attachment'
   | 'identifier'
+  | 'imageMetadata'
+  | 'fontName'
+  | 'revision'
+  | 'template'
 
 /** 版面区域：决定同一命中的优先级。 */
 export type Zone =
@@ -190,6 +194,42 @@ export interface CoverageEntry {
   pageNumbers?: number[]
 }
 
+/** 嵌入图片的元数据（EXIF / IPTC / XMP / 注释） */
+export interface ImageMetaFact {
+  /** 文档内序号，从 1 开始 */
+  index: number
+  /** 引用该图片的页码；空数组 = 没有任何页面引用（删除后残留） */
+  pages: number[]
+  filter: string
+  fields: Record<string, string>
+  gps: boolean
+}
+
+/** 页面资源里的字体名（已去掉子集前缀） */
+export interface FontFact {
+  name: string
+  pages: number[]
+}
+
+/** 增量保存的旧版本（不含最新版本） */
+export interface RevisionFact {
+  /** 第几个版本，从 1 开始；最新版本是 revisionCount */
+  index: number
+  info: Record<string, string>
+  xmp: Record<string, string> | null
+}
+
+/** 直接读 PDF 对象得到的信息（pdf.js 公开 API 拿不到的部分） */
+export interface BinaryFacts {
+  status: 'completed' | 'failed'
+  images: ImageMetaFact[]
+  imageCount: number
+  fonts: FontFact[]
+  /** 版本数（增量保存次数 + 1）；线性化文件的首页段不计 */
+  revisionCount: number
+  oldRevisions: RevisionFact[]
+}
+
 export interface DocumentFacts {
   id: string
   role: DocumentRole
@@ -206,6 +246,8 @@ export interface DocumentFacts {
   internalLinkCount: number
   coverage: CoverageEntry[]
   warnings: string[]
+  /** 图片元数据、字体名、增量保存旧版本；读取失败或未运行时为 undefined */
+  binary?: BinaryFacts
 }
 
 export interface PolicyRef {
@@ -307,6 +349,10 @@ export interface VenuePreset {
   disabledRuleIds: string[]
   severityOverrides: Record<string, Severity>
   limitations: string[]
+  /** 审稿模式模板会印出的标记（正则源码，忽略大小写）；找不到时提示可能用了终稿模板 */
+  templateMarker?: { pattern: string; label: string; suggestion: string } | null
+  /** 用户自定义的预设（保存在本机 localStorage） */
+  custom?: boolean
 }
 
 export interface ScanOptions {

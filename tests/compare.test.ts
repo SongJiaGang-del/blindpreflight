@@ -56,7 +56,7 @@ describe('修复前后对比', () => {
   })
 
   test('清理版只消除元数据 / 批注 / 附件类发现；正文类发现仍存在', async () => {
-    const { bytes } = await sanitizePdf(sampleBytes('sample-leaky.pdf'), { metadata: true, removeTitle: true, annotations: true, externalLinks: false, attachments: true })
+    const { bytes } = await sanitizePdf(sampleBytes('sample-leaky.pdf'), { metadata: true, removeTitle: true, annotations: true, externalLinks: false, attachments: true, imageMetadata: true })
     // 带上清理前从元数据得到的作者名，否则正文中的作者名会因“工具不再知道作者是谁”而被误判为已修复
     const r = await extractBytes(bytes, 'paper.pdf', 'main', 'main')
     opened.push(r)

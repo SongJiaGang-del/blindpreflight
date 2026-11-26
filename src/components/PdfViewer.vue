@@ -52,7 +52,7 @@ const highlight = computed<BBox[]>(() => {
 const noBoxNote = computed(() => {
   const f = props.finding
   if (!f) return null
-  if (f.page == null) return '这是文档级发现（元数据 / 文件名 / 附件），没有页面位置。'
+  if (f.page == null) return '这是文档级发现（元数据、文件名、附件、旧版本或未被页面引用的图片），没有页面位置。'
   if (currentOcc.value && !currentOcc.value.bboxes?.length && currentOcc.value.page === pageNo.value) return '该发现没有精确坐标，请在整页中查找。'
   if (f.bboxApproximate && highlight.value.length) return '高亮框按字符宽度估算，可能略有偏移。'
   return null

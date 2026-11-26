@@ -5,6 +5,8 @@
  * - 批注：删除审阅类注释（便签、高亮、手写、印章、文件附件……），保留链接与表单域
  * - 外部链接（可选）：删除指向网址 / 外部文件的链接注释，可见文字不变
  * - 附件：删除 EmbeddedFiles 名称树与关联文件（AF）
+ * - 图片元数据：删除 JPEG 中的 EXIF / XMP（APP1）、IPTC（APP13）与注释段，以及图片自带的 /Metadata
+ * - 增量保存的旧版本：pdf-lib 重新完整写出文件，旧版本随之消失
  * - 不可达对象回收：pdf-lib 会把文件中的全部对象（含增量更新残留的旧版本）原样写回，
  *   所以保存前从 trailer 出发做一次可达性标记，删掉没被引用的对象，
  *   否则被“删除”的作者名、附件内容仍会留在新文件的字节里。
@@ -12,6 +14,7 @@
  * 全部在浏览器内存中完成；pdf-lib 按需动态加载，不影响首屏体积。
  */
 import type { PDFArray, PDFContext, PDFDict, PDFObject } from 'pdf-lib'
+import { stripJpegMeta } from '@/parsers/pdf/imagemeta'
 
 export interface SanitizeOptions {
   /** 清空 Info / XMP / PieceInfo */
@@ -24,6 +27,8 @@ export interface SanitizeOptions {
   externalLinks: boolean
   /** 删除嵌入附件 */
   attachments: boolean
+  /** 删除图片的 EXIF / IPTC / XMP 与注释 */
+  imageMetadata: boolean
   /** 使用对象流压缩（测试中关闭以便检查原始字节） */
   useObjectStreams?: boolean
 }
@@ -34,6 +39,7 @@ export const DEFAULT_SANITIZE_OPTIONS: SanitizeOptions = {
   annotations: true,
   externalLinks: false,
   attachments: true,
+  imageMetadata: true,
 }
 
 export interface SanitizeReport {
@@ -45,6 +51,8 @@ export interface SanitizeReport {
   annotationTypes: Record<string, number>
   linksRemoved: number
   attachmentsRemoved: number
+  /** 去掉了元数据的图片数 */
+  imagesCleaned: number
   /** 回收的不可达对象数（含增量更新残留） */
   orphansRemoved: number
   bytesBefore: number
@@ -75,6 +83,7 @@ export async function sanitizePdf(input: Uint8Array, opts: SanitizeOptions = DEF
     annotationTypes: {},
     linksRemoved: 0,
     attachmentsRemoved: 0,
+    imagesCleaned: 0,
     orphansRemoved: 0,
     bytesBefore: input.byteLength,
     bytesAfter: 0,
@@ -196,6 +205,27 @@ export async function sanitizePdf(input: Uint8Array, opts: SanitizeOptions = DEF
       if (k) n += countNameTree(k, depth + 1)
     }
     return n
+  }
+
+  /* ---------- 图片元数据 ---------- */
+  if (opts.imageMetadata) {
+    for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
+      if (!(obj instanceof lib.PDFRawStream) || obj.dict.get(N('Subtype')) !== N('Image')) continue
+      let changed = false
+      if (obj.dict.has(N('Metadata'))) {
+        obj.dict.delete(N('Metadata'))
+        changed = true
+      }
+      // 只处理单一 DCTDecode：原始字节就是完整 JPEG，去掉元数据段不影响图像数据
+      if (nameOf(obj.dict.get(N('Filter'))) === 'DCTDecode') {
+        const stripped = stripJpegMeta(obj.contents)
+        if (stripped) {
+          ctx.assign(ref, lib.PDFRawStream.of(obj.dict, stripped))
+          changed = true
+        }
+      }
+      if (changed) report.imagesCleaned++
+    }
   }
 
   /* ---------- 不可达对象回收 ---------- */
