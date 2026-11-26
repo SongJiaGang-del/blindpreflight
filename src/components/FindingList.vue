@@ -11,7 +11,9 @@ const emit = defineEmits<{ select: [id: string] }>()
 const s = useSession()
 
 type ReviewFilter = 'all' | 'todo' | 'resolved' | 'dismissed'
+type CompareFilter = 'all' | 'remaining' | 'added' | 'reopened'
 const filter = reactive({
+  compare: 'all' as CompareFilter,
   doc: 'all' as string,
   severity: 'all' as Severity | 'all',
   category: 'all' as FindingCategory | 'all',
@@ -30,6 +32,12 @@ const catOptions = computed(() => {
     ...(Object.keys(CATEGORY_LABEL) as FindingCategory[]).filter((c) => present.has(c)).map((c) => ({ value: c, label: CATEGORY_LABEL[c] })),
   ]
 })
+const compareOptions = [
+  { value: 'all', label: '对比：全部' },
+  { value: 'remaining', label: '仍存在' },
+  { value: 'added', label: '新增' },
+  { value: 'reopened', label: '标记已改但仍存在' },
+]
 const reviewOptions = [
   { value: 'todo', label: '待处理' },
   { value: 'resolved', label: '已修改' },
@@ -42,6 +50,11 @@ const visible = computed(() =>
     if (filter.doc !== 'all' && f.documentId !== filter.doc) return false
     if (filter.severity !== 'all' && f.severity !== filter.severity) return false
     if (filter.category !== 'all' && f.category !== filter.category) return false
+    if (filter.compare !== 'all') {
+      if (filter.compare === 'reopened') {
+        if (!s.comparison.value?.reopened.includes(f.id)) return false
+      } else if (s.compareTag.value.get(f.id) !== filter.compare) return false
+    }
     const st = s.statusOf(f.id)
     if (filter.review === 'todo' && (st === 'resolved' || isDismissed(st))) return false
     if (filter.review === 'resolved' && st !== 'resolved') return false
@@ -50,9 +63,18 @@ const visible = computed(() =>
   }),
 )
 
-const filtered = computed(() => filter.doc !== 'all' || filter.severity !== 'all' || filter.category !== 'all' || filter.review !== 'todo')
+// 对比关闭后，对比筛选自动失效
+watch(
+  () => s.comparison.value,
+  (c) => {
+    if (!c) filter.compare = 'all'
+  },
+)
+
+const filtered = computed(() => filter.compare !== 'all' || filter.doc !== 'all' || filter.severity !== 'all' || filter.category !== 'all' || filter.review !== 'todo')
 
 function reset() {
+  filter.compare = 'all'
   filter.doc = 'all'
   filter.severity = 'all'
   filter.category = 'all'
@@ -80,6 +102,10 @@ defineExpose({
     filter.category = 'all'
     filter.review = 'all'
   },
+  showCompare(tag: CompareFilter) {
+    reset()
+    filter.compare = tag
+  },
   showCategory(cat: FindingCategory) {
     filter.category = cat
     filter.severity = 'all'
@@ -96,7 +122,8 @@ defineExpose({
 
 <template>
   <section class="list" aria-label="发现列表">
-    <div class="filters">
+    <div class="filters" :class="{ five: !!s.comparison.value }">
+      <n-select v-if="s.comparison.value" v-model:value="filter.compare" size="small" :options="compareOptions" aria-label="按对比结果筛选" data-testid="filter-compare" />
       <n-select v-model:value="filter.doc" size="small" :options="docOptions" aria-label="按文件筛选" />
       <n-select v-model:value="filter.severity" size="small" :options="sevOptions" aria-label="按级别筛选" data-testid="filter-severity" />
       <n-select v-model:value="filter.category" size="small" :options="catOptions" aria-label="按类别筛选" />
@@ -135,6 +162,9 @@ defineExpose({
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+.filters.five {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .count {
   font-size: 12px;

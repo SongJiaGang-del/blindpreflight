@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "naive-ui": "^2.45.3",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.5.438",
     "vue": "^3.5.46"
   },
@@ -29,7 +30,6 @@
     "eslint": "^10.15.0",
     "eslint-plugin-vue": "^10.12.1",
     "jsdom": "^31.0.1",
-    "pdf-lib": "^1.17.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.74.0",

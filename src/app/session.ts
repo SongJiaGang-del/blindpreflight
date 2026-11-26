@@ -7,15 +7,16 @@
  */
 import { computed, markRaw, reactive, shallowRef } from 'vue'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { DocumentFacts, ReviewDecision, ReviewStatus, ScanResult } from '@/domain/types'
+import type { DocumentFacts, ReviewDecision, ReviewStatus, ScanOptions, ScanResult } from '@/domain/types'
 import { LIMITS } from '@/domain/limits'
 import { PreflightError, isCancelled } from '@/domain/errors'
 import { extractDocument } from '@/parsers/pdf/extract'
 import { browserAssets, loadPdfjs } from '@/parsers/pdf/pdfjs-browser'
 import { validateSelection } from '@/parsers/pdf/validate'
 import { runScan } from '@/rules/engine'
-import { parseUserTerms } from '@/rules/terms'
+import { deriveNames, parseUserTerms } from '@/rules/terms'
 import { PRESETS } from '@/presets'
+import { type Comparison, compareScans, compareTags, migrateDecisions } from './compare'
 
 export type Phase = 'idle' | 'reading' | 'parsing' | 'scanning' | 'done' | 'error' | 'cancelled'
 export type SlotId = 'main' | 'supp-1' | 'supp-2'
@@ -64,15 +65,39 @@ const state = reactive({
   selectionError: null as string | null,
   decisions: new Map<string, ReviewDecision>(),
   selectedFindingId: null as string | null,
+  /** 人工核对清单中已勾选的条目 */
+  checked: new Set<string>(),
   /** 结果视图 / 导入视图 */
   view: 'import' as 'import' | 'results',
 })
 
 const result = shallowRef<ScanResult | null>(null)
+/** 与上一版的对比（换了文件重新检查时生成） */
+const comparison = shallowRef<Comparison | null>(null)
 const pdfs = new Map<string, PDFDocumentProxy>()
 let currentRun = 0
 let controller: AbortController | null = null
 let lastFingerprints = ''
+/** 本次会话中从元数据得到过的作者名（只在内存中），见 ScanOptions.knownNames */
+let knownNames: NonNullable<ScanOptions['knownNames']> = []
+
+function rememberNames(facts: DocumentFacts[]): void {
+  const seen = new Set(knownNames.map((n) => n.raw.toLowerCase()))
+  for (const n of deriveNames(facts)) {
+    if (seen.has(n.raw.toLowerCase())) continue
+    seen.add(n.raw.toLowerCase())
+    knownNames.push({ raw: n.raw, tokens: [...n.tokens], source: n.source })
+  }
+}
+
+function scanOptions(): ScanOptions {
+  return {
+    presetId: state.presetId,
+    userTerms: parseUserTerms(state.termsText),
+    strictShortTerms: state.strictShortTerms,
+    knownNames,
+  }
+}
 
 function destroyPdfs(): void {
   for (const pdf of pdfs.values()) void pdf.loadingTask.destroy().catch(() => {})
@@ -179,15 +204,21 @@ async function start(): Promise<void> {
       for (const p of opened) void p.loadingTask.destroy().catch(() => {})
       return
     }
-    const scan = runScan(facts, {
-      presetId: state.presetId,
-      userTerms: parseUserTerms(state.termsText),
-      strictShortTerms: state.strictShortTerms,
-    }, { runId })
-    // 同一组文件重扫保留复核决定；换了文件则清空
+    const scan = runScan(facts, scanOptions(), { runId })
+    rememberNames(facts)
+    // 同一组文件重扫保留复核决定；换了文件则与上一版对比，并把仍然存在的发现的忽略决定带过来
     const fp = selectedFingerprints()
-    if (fp !== lastFingerprints) state.decisions.clear()
-    else {
+    const prevResult = result.value
+    if (fp !== lastFingerprints) {
+      const prevDecisions = new Map(state.decisions)
+      state.decisions.clear()
+      if (prevResult && lastFingerprints) {
+        const cmp = compareScans(prevResult, scan)
+        const mig = migrateDecisions(cmp, prevDecisions)
+        for (const [k, v] of mig.decisions) state.decisions.set(k, v)
+        comparison.value = markRaw({ ...cmp, reopened: mig.reopened })
+      } else comparison.value = null
+    } else {
       const ids = new Set(scan.findings.map((f) => f.id))
       for (const id of [...state.decisions.keys()]) if (!ids.has(id)) state.decisions.delete(id)
     }
@@ -225,6 +256,8 @@ function clearAll(): void {
   currentRun++
   destroyPdfs()
   result.value = null
+  comparison.value = null
+  state.checked.clear()
   state.files = { main: null, 'supp-1': null, 'supp-2': null }
   state.termsText = ''
   state.strictShortTerms = false
@@ -235,6 +268,7 @@ function clearAll(): void {
   state.selectionError = null
   state.view = 'import'
   lastFingerprints = ''
+  knownNames = []
 }
 
 function setDecision(findingId: string, status: ReviewStatus, reason = ''): void {
@@ -273,12 +307,46 @@ async function loadSamples(kind: 'leaky' | 'fixed'): Promise<void> {
   }
 }
 
+/** 结果页直接换上新版本并重新检查（会自动与上一版对比） */
+async function rescanWith(slot: SlotId, file: File): Promise<void> {
+  setFile(slot, file)
+  if (state.selectionError) return
+  await start()
+}
+
+/**
+ * 只读复检：对一份（清理后的）PDF 做与当前设置相同的检查，不改动会话状态。
+ * 用于在下载清理版之前告诉用户“哪些问题已经消除，哪些仍需改源文件”。
+ */
+async function previewScan(slot: SlotId, bytes: Uint8Array): Promise<ScanResult> {
+  const lib = await loadPdfjs()
+  const r = await extractDocument(
+    { id: slot, role: slot === 'main' ? 'main' : 'supplement', displayName: state.files[slot]?.name ?? slot, bytes },
+    { lib, assets: browserAssets(), pageBudget: LIMITS.maxPagesTotal },
+  )
+  try {
+    return runScan([r.facts], scanOptions())
+  } finally {
+    void r.pdf.loadingTask.destroy().catch(() => {})
+  }
+}
+
+function dismissComparison(): void {
+  comparison.value = null
+}
+
+function toggleChecked(id: string, on: boolean): void {
+  if (on) state.checked.add(id)
+  else state.checked.delete(id)
+}
+
 export function getPdf(docId: string): PDFDocumentProxy | null {
   return pdfs.get(docId) ?? null
 }
 
 const busy = computed(() => state.phase === 'reading' || state.phase === 'parsing' || state.phase === 'scanning')
 const selectedFinding = computed(() => result.value?.findings.find((f) => f.id === state.selectedFindingId) ?? null)
+const compareTag = computed(() => compareTags(comparison.value))
 const filesChangedSinceScan = computed(() => result.value != null && selectedFingerprints() !== lastFingerprints)
 
 export function useSession() {
@@ -288,6 +356,12 @@ export function useSession() {
     busy,
     selectedFinding,
     filesChangedSinceScan,
+    comparison,
+    compareTag,
+    dismissComparison,
+    toggleChecked,
+    rescanWith,
+    previewScan,
     setFile,
     addFiles,
     setPreset,

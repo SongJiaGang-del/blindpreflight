@@ -17,6 +17,7 @@ import {
   type FindingDraft,
   type RuleContext,
   SEVERITY_RANK,
+  type DerivedName,
   materialize,
   maxConfidence,
   maxSeverity,
@@ -158,6 +159,18 @@ function newScanId(): string {
   return `scan-${Date.now().toString(36)}`
 }
 
+/** 合并本次派生的作者名与会话中较早得到的作者名（后者标注为“上一版”） */
+function mergeKnownNames(current: DerivedName[], known: NonNullable<ScanOptions['knownNames']>): DerivedName[] {
+  const seen = new Set(current.map((n) => n.raw.toLowerCase()))
+  const out = [...current]
+  for (const n of known) {
+    if (seen.has(n.raw.toLowerCase())) continue
+    seen.add(n.raw.toLowerCase())
+    out.push({ raw: n.raw, tokens: [...n.tokens], source: n.source.startsWith('上一版') ? n.source : `上一版 ${n.source}` })
+  }
+  return out
+}
+
 export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: RunMeta = {}): ScanResult {
   const now = meta.now ?? (() => new Date())
   const startedAt = now().toISOString()
@@ -166,7 +179,7 @@ export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: 
     preset,
     userTerms: options.userTerms,
     strictShortTerms: options.strictShortTerms,
-    derivedNames: deriveNames(documents),
+    derivedNames: mergeKnownNames(deriveNames(documents), options.knownNames ?? []),
     allDocs: documents,
   }
   const all: Finding[] = []

@@ -6,17 +6,25 @@ import { DEFAULT_REPORT_OPTIONS, buildReport, reportFilename, reportJson } from 
 import { renderReportHtml } from '@/report/html'
 import { downloadText } from '@/report/download'
 import { useSession } from '@/app/session'
+import { checklistFor } from '@/app/checklist'
 
 const props = defineProps<{ result: ScanResult }>()
 const show = defineModel<boolean>('show', { required: true })
 const s = useSession()
 const dialog = useDialog()
 
-const opts = reactive({ ...DEFAULT_REPORT_OPTIONS })
+const opts = reactive({ ...DEFAULT_REPORT_OPTIONS, includeChecklist: true })
 const busy = ref(false)
 
 function doExport(kind: 'json' | 'html') {
-  const report = buildReport(props.result, s.state.decisions, { ...opts })
+  const { includeChecklist, ...reportOpts } = opts
+  const cmp = s.comparison.value
+  const report = buildReport(props.result, s.state.decisions, reportOpts, undefined, {
+    checklist: includeChecklist ? { items: checklistFor(props.result), checked: s.state.checked } : undefined,
+    comparison: cmp
+      ? { fixed: cmp.fixed.length, remaining: cmp.remaining.length, added: cmp.added.length, reopened: cmp.reopened.length, presetChanged: cmp.presetChanged }
+      : null,
+  })
   if (kind === 'json') downloadText(reportFilename(report, 'json'), reportJson(report), 'application/json')
   else downloadText(reportFilename(report, 'html'), renderReportHtml(report), 'text/html')
   show.value = false
@@ -47,7 +55,8 @@ function exportAs(kind: 'json' | 'html') {
       <n-checkbox v-model:checked="opts.redactEvidence" data-testid="opt-redact">证据脱敏（命中文字打码，只保留首字母与前后少量上下文）</n-checkbox>
       <n-checkbox v-model:checked="opts.hideFilenames" data-testid="opt-hide-names">隐藏文件名（显示为“主稿 / 补充材料 n”）</n-checkbox>
       <n-checkbox v-model:checked="opts.includeDismissed">包含已忽略的发现（总数始终保留）</n-checkbox>
-      <div class="muted">报告不包含 PDF 内容、全文或你输入的自定义词，只包含发现摘要、覆盖范围与复核状态。</div>
+      <n-checkbox v-model:checked="opts.includeChecklist" data-testid="opt-checklist">包含人工核对清单的勾选情况</n-checkbox>
+      <div class="muted">报告不包含 PDF 内容、全文或你输入的自定义词，只包含发现摘要、覆盖范围、复核状态，以及（如有）核对清单和与上一版对比的计数。</div>
     </div>
     <template #footer>
       <div class="foot">

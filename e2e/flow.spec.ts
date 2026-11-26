@@ -124,3 +124,37 @@ test('清除全部：回到导入页，结果与自定义词被清空', async ({
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }))
   expect(stored).not.toMatch(/Widget|Alex|sample-leaky/i)
 })
+
+test('清理 PDF → 复检 → 替换并重新检查 → 与上一版对比，全程无外部请求', async ({ page }) => {
+  const net = await guardNetwork(page)
+  await scanLeakyUpload(page)
+
+  await page.getByTestId('open-clean').click()
+  await expect(page.getByTestId('clean-dialog')).toBeVisible()
+  await page.getByTestId('clean-run').click()
+  const result = page.getByTestId('clean-result')
+  await expect(result).toBeVisible({ timeout: 30_000 })
+  const fixedInPreview = Number((await result.locator('.stat.ok b').first().textContent())?.trim())
+  expect(fixedInPreview).toBeGreaterThan(0)
+
+  // 下载的清理版：中性文件名，且不含元数据里的作者名与附件
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('clean-download').click()])
+  expect(dl.suggestedFilename()).toBe('paper.pdf')
+  const bytes = await readFile((await dl.path())!)
+  expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+
+  await page.getByTestId('clean-use').click()
+  const panel = page.getByTestId('compare-panel')
+  await expect(panel).toBeVisible({ timeout: 30_000 })
+  expect(Number((await page.getByTestId('cmp-fixed').locator('b').textContent())?.trim())).toBe(fixedInPreview)
+  expect(Number((await page.getByTestId('cmp-added').locator('b').textContent())?.trim())).toBe(0)
+
+  // 人工核对清单：勾选后计数变化
+  await page.getByTestId('checklist').locator('summary').click()
+  await page.getByTestId('check-repo').click()
+  await expect(page.getByTestId('checklist').locator('summary')).toContainText('1 / 8')
+
+  expect(net.external).toEqual([])
+  expect(net.nonGet).toEqual([])
+  expect(net.errors).toEqual([])
+})

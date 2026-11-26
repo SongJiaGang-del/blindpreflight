@@ -9,6 +9,10 @@ import ResultsSummary from './ResultsSummary.vue'
 import FindingList from './FindingList.vue'
 import PdfViewer from './PdfViewer.vue'
 import ExportDialog from './ExportDialog.vue'
+import CleanDialog from './CleanDialog.vue'
+import ComparePanel from './ComparePanel.vue'
+import ChecklistPanel from './ChecklistPanel.vue'
+import type { CompareTag } from '@/app/compare'
 
 const props = defineProps<{ result: ScanResult }>()
 const emit = defineEmits<{ help: [tab: string] }>()
@@ -17,6 +21,25 @@ const message = useMessage()
 const list = ref<InstanceType<typeof FindingList> | null>(null)
 const viewer = ref<InstanceType<typeof PdfViewer> | null>(null)
 const showExport = ref(false)
+const showClean = ref(false)
+const newVersion = ref<HTMLInputElement | null>(null)
+
+function pickNewVersion() {
+  newVersion.value?.click()
+}
+async function onNewVersion(e: Event) {
+  const el = e.target as HTMLInputElement
+  const f = el.files?.[0]
+  el.value = ''
+  if (!f) return
+  await s.rescanWith('main', f)
+  if (s.state.selectionError) message.warning(s.state.selectionError)
+  else if (s.state.phase === 'error' && s.state.error) message.error(s.state.error)
+}
+function onCompareFilter(tag: CompareTag | 'reopened') {
+  list.value?.showCompare(tag)
+  mobileTab.value = 'findings'
+}
 const mobileTab = ref<'findings' | 'page'>('findings')
 
 /** 界面上的文件标签不用文件名，避免截图或录屏时泄露 */
@@ -173,6 +196,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <span v-if="s.busy.value" class="muted">正在重新检查…</span>
       </div>
       <div class="bar-right">
+        <input ref="newVersion" type="file" accept="application/pdf,.pdf" hidden data-testid="new-version-input" @change="onNewVersion" />
+        <n-button size="small" :disabled="s.busy.value" title="选择修改后的主稿，重新检查并与当前结果对比" data-testid="new-version" @click="pickNewVersion">上传新版本</n-button>
+        <n-button size="small" :disabled="s.busy.value" data-testid="open-clean" @click="showClean = true">清理 PDF</n-button>
         <n-button size="small" :disabled="s.busy.value" @click="s.start()">重新检查</n-button>
         <n-button size="small" type="primary" data-testid="open-export" @click="showExport = true">导出报告</n-button>
       </div>
@@ -184,6 +210,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <div class="cols" :class="`show-${mobileTab}`">
       <div class="left">
         <ResultsSummary :result="result" :doc-labels="docLabels" @severity="onSeverity" @category="onCategory" @page="onPage" />
+        <ComparePanel
+          v-if="s.comparison.value"
+          :cmp="s.comparison.value"
+          :doc-labels="docLabels"
+          @filter="onCompareFilter"
+          @dismiss="s.dismissComparison()"
+        />
+        <ChecklistPanel :result="result" />
         <FindingList ref="list" :findings="result.findings" :doc-labels="docLabels" @select="select" />
       </div>
       <div class="right">
@@ -198,6 +232,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </div>
     </div>
     <ExportDialog v-model:show="showExport" :result="result" />
+    <CleanDialog v-model:show="showClean" :result="result" />
   </div>
 </template>
 

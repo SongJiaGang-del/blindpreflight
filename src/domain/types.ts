@@ -313,6 +313,12 @@ export interface ScanOptions {
   presetId: string
   userTerms: UserTerm[]
   strictShortTerms: boolean
+  /**
+   * 本次会话中较早扫描从元数据得到的作者名。删掉元数据后（清理版、改过的新版本）
+   * 仍用这些名字查正文，避免“元数据没了 → 工具不知道作者是谁 → 正文里的名字被当成已修复”。
+   * 只在内存中，不写入报告。
+   */
+  knownNames?: Array<{ raw: string; tokens: string[]; source: string }>
 }
 
 export interface RuleRunStatus {

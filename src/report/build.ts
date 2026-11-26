@@ -30,6 +30,12 @@ export const DEFAULT_REPORT_OPTIONS: ReportOptions = {
   includeDismissed: true,
 }
 
+/** 报告附加信息：人工核对清单与修复前后对比（都只含条目与计数，不含稿件内容） */
+export interface ReportExtras {
+  checklist?: { items: ReadonlyArray<{ id: string; title: string }>; checked: ReadonlySet<string> }
+  comparison?: { fixed: number; remaining: number; added: number; reopened: number; presetChanged: boolean } | null
+}
+
 export interface ReportFinding {
   id: string
   ruleIds: string[]
@@ -89,6 +95,10 @@ export interface Report {
   rules: ScanResult['rules']
   userTermCount: number
   findings: ReportFinding[]
+  /** 人工核对清单；未提供时为 null */
+  checklist: Array<{ id: string; title: string; checked: boolean }> | null
+  /** 与上一版的对比计数；没有对比时为 null */
+  comparison: { fixed: number; remaining: number; added: number; reopened: number; presetChanged: boolean } | null
   disclaimer: string
 }
 
@@ -202,6 +212,7 @@ export function buildReport(
   decisions: ReadonlyMap<string, ReviewDecision>,
   options: ReportOptions,
   now: () => Date = () => new Date(),
+  extras: ReportExtras = {},
 ): Report {
   const statusOf = (f: Finding): ReviewStatus => decisions.get(f.id)?.status ?? 'open'
   const shown = result.findings.filter((f) => options.includeDismissed || !isDismissed(statusOf(f)))
@@ -295,6 +306,10 @@ export function buildReport(
     rules: result.rules.map((r) => ({ ...r })),
     userTermCount: result.userTermCount,
     findings,
+    checklist: extras.checklist
+      ? extras.checklist.items.map((i) => ({ id: i.id, title: i.title, checked: extras.checklist!.checked.has(i.id) }))
+      : null,
+    comparison: extras.comparison ? { ...extras.comparison } : null,
     disclaimer: DISCLAIMER,
   }
 }

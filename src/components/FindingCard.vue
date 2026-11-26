@@ -16,6 +16,8 @@ const dialog = useDialog()
 const message = useMessage()
 
 const status = computed(() => s.statusOf(props.finding.id))
+const cmpTag = computed(() => s.compareTag.value.get(props.finding.id) ?? null)
+const reopened = computed(() => s.comparison.value?.reopened.includes(props.finding.id) ?? false)
 const dismissed = computed(() => isDismissed(status.value))
 
 const parts = computed(() => {
@@ -94,6 +96,9 @@ async function copyEvidence() {
       <span class="title">{{ finding.ruleIds.map(ruleTitle).join(' · ') }}</span>
       <n-tag size="tiny" :bordered="false">{{ CATEGORY_LABEL[finding.category] }}</n-tag>
       <n-tag v-if="finding.matchedUserTerm" size="tiny" :bordered="false" type="info">命中自定义词</n-tag>
+      <span v-if="cmpTag === 'added'" class="cmp added" data-testid="tag-added">新增</span>
+      <span v-else-if="reopened" class="cmp reopened">标记已改，但仍存在</span>
+      <span v-else-if="cmpTag === 'remaining'" class="cmp remaining">仍存在</span>
       <span class="ids">{{ finding.ruleIds.join('+') }}</span>
     </header>
     <div class="where">{{ where }} · {{ SOURCE_LABEL[finding.source] }} · 置信度{{ CONFIDENCE_LABEL[finding.confidence] }}</div>
@@ -191,6 +196,24 @@ async function copyEvidence() {
   color: var(--sev);
   background: color-mix(in srgb, var(--sev) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--sev) 35%, transparent);
+}
+.cmp {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 7px;
+  border-radius: 999px;
+}
+.cmp.added {
+  color: var(--bp-on-accent);
+  background: var(--bp-high);
+}
+.cmp.reopened {
+  color: var(--bp-high);
+  background: var(--bp-high-soft);
+}
+.cmp.remaining {
+  color: var(--bp-medium-ink);
+  background: var(--bp-medium-soft);
 }
 .title {
   font-family: var(--bp-serif);

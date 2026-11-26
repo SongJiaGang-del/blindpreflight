@@ -13,4 +13,4 @@ export const LIMITS = {
 
 export const APP_VERSION = '0.1.0'
 export const RULESET_VERSION = '2026.11.26'
-export const REPORT_SCHEMA_VERSION = '1.0.0'
+export const REPORT_SCHEMA_VERSION = '1.1.0'

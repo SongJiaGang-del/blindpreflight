@@ -27,6 +27,7 @@ table{border-collapse:collapse;width:100%;margin:6px 0}th,td{border:1px solid #e
 .finding.sev-high{border-left-color:#c0392b}.finding.sev-medium{border-left-color:#b7791f}
 .finding .meta{font-size:12px;color:#5b6676}.evidence{font-family:ui-monospace,Consolas,monospace;background:#f6f7f9;padding:6px 8px;border-radius:4px;white-space:pre-wrap;word-break:break-all;margin:6px 0}
 ul{margin:4px 0;padding-left:20px}.url{font-family:ui-monospace,Consolas,monospace;word-break:break-all}
+.check{list-style:none;padding:0}.check li{padding:2px 0}.box{display:inline-block;width:14px;font-family:ui-monospace,Consolas,monospace}
 .disclaimer{border:1px solid #e3e7ee;background:#fbfbfc;padding:10px 12px;border-radius:4px;margin-top:24px}
 @media print{body{margin:0;max-width:none}.finding{page-break-inside:avoid}h2{page-break-after:avoid}}
 `
@@ -102,6 +103,17 @@ ${r.preset.limitations.length ? `<ul class="small muted">${r.preset.limitations.
 <h2>覆盖范围与未检查项</h2>
 <table><tr><th>文件</th><th>能力</th><th>状态</th><th>说明</th></tr>${cov}</table>
 ${disabled.length ? `<div class="small">当前预设未启用的检查：${disabled.map((x) => e(`${x.ruleId} ${x.title}`)).join('、')}</div>` : ''}
+
+${
+  r.comparison
+    ? `<h2>与上一版对比</h2><div>已修复 <b>${r.comparison.fixed}</b> 条 · 仍存在 <b>${r.comparison.remaining}</b> 条 · 新增 <b>${r.comparison.added}</b> 条${r.comparison.reopened ? ` · 标记为已修改但仍存在 <b class="high">${r.comparison.reopened}</b> 条` : ''}</div>${r.comparison.presetChanged ? '<div class="small muted">两次检查使用的会场预设不同。</div>' : ''}`
+    : ''
+}
+${
+  r.checklist
+    ? `<h2>人工核对清单（${r.checklist.filter((c) => c.checked).length} / ${r.checklist.length}）</h2><ul class="check">${r.checklist.map((c) => `<li><span class="box">${c.checked ? '☑' : '☐'}</span> ${e(c.title)}</li>`).join('')}</ul>`
+    : ''
+}
 
 ${groups
   .map(([title, list]) => `<h2>${e(title)}（${list.length}）</h2>${list.length ? list.map(findingHtml).join('\n') : '<div class="muted">无</div>'}`)
