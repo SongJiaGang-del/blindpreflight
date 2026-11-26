@@ -1,0 +1,11 @@
+# 统一使用 LF 换行，不随操作系统转换
+* text=auto eol=lf
+
+# 二进制文件
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.wasm binary
