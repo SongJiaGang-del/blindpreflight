@@ -100,6 +100,17 @@ function setFile(slot: SlotId, file: File | null): void {
   checkSelection()
 }
 
+/** 整页拖入多个文件：先填主稿，再依次填空着的补充材料槽；都满了则替换主稿 */
+function addFiles(files: File[]): void {
+  const queue = [...files]
+  for (const id of SLOT_IDS) {
+    if (!queue.length) break
+    if (!state.files[id]) state.files[id] = queue.shift()!
+  }
+  if (queue.length && files.length === 1) state.files.main = queue.shift()!
+  checkSelection()
+}
+
 function setPreset(id: string): void {
   if (!PRESETS.some((p) => p.id === id)) return
   state.presetId = id
@@ -278,6 +289,7 @@ export function useSession() {
     selectedFinding,
     filesChangedSinceScan,
     setFile,
+    addFiles,
     setPreset,
     start,
     cancel,

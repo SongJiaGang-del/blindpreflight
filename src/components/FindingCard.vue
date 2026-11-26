@@ -135,31 +135,44 @@ async function copyEvidence() {
 
 <style scoped>
 .card {
-  background: #fff;
+  --sev: var(--bp-info);
+  position: relative;
+  background: var(--bp-panel);
   border: 1px solid var(--bp-line);
-  border-left: 4px solid var(--bp-info);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 10px;
+  padding: 12px 14px 12px 18px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 6px;
   cursor: pointer;
   outline: none;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+  scroll-margin: 80px 0 20px;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--sev);
 }
 .card.sev-high {
-  border-left-color: var(--bp-high);
+  --sev: var(--bp-high);
 }
 .card.sev-medium {
-  border-left-color: var(--bp-medium);
+  --sev: var(--bp-medium);
 }
 .card:hover {
-  box-shadow: 0 1px 6px rgba(20, 40, 70, 0.08);
+  box-shadow: var(--bp-shadow);
 }
 .card:focus-visible,
 .card.selected {
   border-color: var(--bp-accent);
-  box-shadow: 0 0 0 2px rgba(31, 58, 95, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bp-accent) 22%, transparent), var(--bp-shadow);
+}
+.card.selected {
+  background: color-mix(in srgb, var(--bp-accent-soft) 45%, var(--bp-panel));
 }
 .card.dismissed {
   opacity: 0.62;
@@ -175,22 +188,18 @@ async function copyEvidence() {
   font-weight: 700;
   padding: 1px 8px;
   border-radius: 4px;
-  color: #fff;
-  background: var(--bp-info);
-}
-.sev-high .sev {
-  background: var(--bp-high);
-}
-.sev-medium .sev {
-  background: var(--bp-medium);
+  color: var(--sev);
+  background: color-mix(in srgb, var(--sev) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sev) 35%, transparent);
 }
 .title {
-  font-weight: 600;
-  font-size: 14px;
+  font-family: var(--bp-serif);
+  font-weight: 700;
+  font-size: 15px;
 }
 .ids {
   margin-left: auto;
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: var(--bp-mono);
   font-size: 11px;
   color: var(--bp-muted);
 }
@@ -201,16 +210,17 @@ async function copyEvidence() {
 .snippet {
   margin: 2px 0;
   padding: 8px 10px;
-  background: #f6f7f9;
-  border-radius: 6px;
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Microsoft YaHei', monospace;
+  background: var(--bp-code);
+  border-left: 2px solid var(--bp-line-strong);
+  border-radius: 4px;
+  font-family: var(--bp-mono);
   font-size: 12.5px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
 }
 .snippet mark {
-  background: #ffe29a;
+  background: var(--bp-mark);
   color: inherit;
   padding: 0 1px;
   border-radius: 2px;
@@ -220,7 +230,7 @@ async function copyEvidence() {
   word-break: break-all;
 }
 .link code {
-  background: #eef2f7;
+  background: var(--bp-code);
   padding: 0 4px;
   border-radius: 3px;
 }
@@ -228,7 +238,7 @@ async function copyEvidence() {
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
-  color: #36404e;
+  color: var(--bp-ink-2);
 }
 .suggest {
   font-size: 13px;

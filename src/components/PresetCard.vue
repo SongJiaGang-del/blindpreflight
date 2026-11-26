@@ -24,9 +24,9 @@ const preset = computed(() => getPreset(props.presetId))
 
 <template>
   <div class="preset">
-    <label class="field-label" for="preset-select">会场预设</label>
     <n-select
       id="preset-select"
+      aria-label="会场预设"
       data-testid="preset-select"
       :value="presetId"
       :options="options"
@@ -72,13 +72,13 @@ const preset = computed(() => getPreset(props.presetId))
   margin: 2px 0 0;
   padding-left: 18px;
   font-size: 13px;
-  color: #36404e;
+  color: var(--bp-ink-2);
   line-height: 1.6;
 }
 .note {
   font-size: 12px;
-  color: #8a5a10;
-  background: #fdf6e8;
+  color: var(--bp-medium-ink);
+  background: var(--bp-medium-soft);
   padding: 6px 10px;
   border-radius: 6px;
 }
@@ -94,7 +94,7 @@ const preset = computed(() => getPreset(props.presetId))
   margin: 6px 0 0;
 }
 .url {
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: var(--bp-mono);
   word-break: break-all;
   color: var(--bp-muted);
   user-select: all;

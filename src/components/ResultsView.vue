@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { NButton, NSelect } from 'naive-ui'
-import type { ScanResult, Severity } from '@/domain/types'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { NButton, NSelect, useMessage } from 'naive-ui'
+import type { FindingCategory, ReviewStatus, ScanResult, Severity } from '@/domain/types'
+import { REVIEW_LABEL, isDismissed } from '@/domain/labels'
 import { PRESETS } from '@/presets'
 import { SLOT_LABEL, type SlotId, useSession } from '@/app/session'
 import ResultsSummary from './ResultsSummary.vue'
@@ -10,8 +11,11 @@ import PdfViewer from './PdfViewer.vue'
 import ExportDialog from './ExportDialog.vue'
 
 const props = defineProps<{ result: ScanResult }>()
+const emit = defineEmits<{ help: [tab: string] }>()
 const s = useSession()
+const message = useMessage()
 const list = ref<InstanceType<typeof FindingList> | null>(null)
+const viewer = ref<InstanceType<typeof PdfViewer> | null>(null)
 const showExport = ref(false)
 const mobileTab = ref<'findings' | 'page'>('findings')
 
@@ -32,6 +36,124 @@ function onSeverity(sev: Severity) {
   list.value?.showSeverity(sev)
   mobileTab.value = 'findings'
 }
+function onCategory(cat: FindingCategory) {
+  list.value?.showCategory(cat)
+  mobileTab.value = 'findings'
+}
+/** 页码热力条：跳到该页；如果该页有待处理发现，选中最严重的那条 */
+function onPage(docId: string, page: number) {
+  const rank: Record<Severity, number> = { high: 3, medium: 2, info: 1 }
+  const hit = props.result.findings
+    .filter((f) => {
+      const st = s.statusOf(f.id)
+      return f.documentId === docId && st !== 'resolved' && !isDismissed(st) && f.occurrences.some((o) => o.page === page)
+    })
+    .sort((a, b) => rank[b.severity] - rank[a.severity])[0]
+  if (hit && hit.id !== s.state.selectedFindingId) {
+    list.value?.reveal(hit.id)
+    viewer.value?.willSelectAt(docId, page)
+    s.state.selectedFindingId = hit.id
+  } else viewer.value?.show(docId, page)
+  mobileTab.value = 'page'
+}
+/** 原页上点击了某个淡色框 */
+function onPick(id: string) {
+  list.value?.reveal(id)
+  s.state.selectedFindingId = id
+}
+
+/* ---------- 快捷键 ---------- */
+function step(delta: number) {
+  const ids = list.value?.visibleIds() ?? []
+  if (!ids.length) return
+  const cur = s.state.selectedFindingId ? ids.indexOf(s.state.selectedFindingId) : -1
+  const next = cur < 0 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, cur + delta))
+  s.state.selectedFindingId = ids[next]!
+}
+function mark(status: ReviewStatus) {
+  const id = s.state.selectedFindingId
+  if (!id) return
+  // 先记住下一条：标记后当前项可能从“待处理”筛选中消失
+  const ids = list.value?.visibleIds() ?? []
+  const i = ids.indexOf(id)
+  const after = ids[i + 1] ?? ids[i - 1] ?? null
+  s.setDecision(id, status)
+  message.info(`已标记：${status === 'open' ? '待处理' : REVIEW_LABEL[status]}`, { duration: 1400 })
+  const still = list.value?.visibleIds() ?? []
+  if (!still.includes(id) && after) s.state.selectedFindingId = after
+}
+function typing(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null
+  if (!t) return false
+  if (t.closest('input, textarea, select, [contenteditable="true"], .n-base-selection, .n-modal, .n-drawer, .n-dialog')) return true
+  return !!document.querySelector('.n-modal-container .n-modal, .n-drawer-container .n-drawer')
+}
+function onKey(e: KeyboardEvent) {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing || typing(e)) return
+  const v = viewer.value
+  const handled = (() => {
+    switch (e.key) {
+      case 'j':
+      case 'J':
+      case 'ArrowDown':
+        step(1)
+        return true
+      case 'k':
+      case 'K':
+      case 'ArrowUp':
+        step(-1)
+        return true
+      case 'Home': {
+        const first = list.value?.visibleIds()[0]
+        if (first) s.state.selectedFindingId = first
+        return true
+      }
+      case 'r':
+      case 'R':
+        mark('resolved')
+        return true
+      case 'i':
+      case 'I':
+        mark('dismissed-irrelevant')
+        return true
+      case 'u':
+      case 'U':
+        mark('open')
+        return true
+      case '[':
+        v?.prevOcc()
+        return true
+      case ']':
+        v?.nextOcc()
+        return true
+      case 'ArrowLeft':
+        v?.prevPage()
+        return true
+      case 'ArrowRight':
+        v?.nextPage()
+        return true
+      case '+':
+      case '=':
+        v?.zoomIn()
+        return true
+      case '-':
+      case '_':
+        v?.zoomOut()
+        return true
+      case '0':
+        v?.zoomReset()
+        return true
+      case '?':
+        emit('help', 'keys')
+        return true
+      default:
+        return false
+    }
+  })()
+  if (handled) e.preventDefault()
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -61,11 +183,18 @@ function onSeverity(sev: Severity) {
     </div>
     <div class="cols" :class="`show-${mobileTab}`">
       <div class="left">
-        <ResultsSummary :result="result" :doc-labels="docLabels" @severity="onSeverity" />
+        <ResultsSummary :result="result" :doc-labels="docLabels" @severity="onSeverity" @category="onCategory" @page="onPage" />
         <FindingList ref="list" :findings="result.findings" :doc-labels="docLabels" @select="select" />
       </div>
       <div class="right">
-        <PdfViewer :key="result.runId" :finding="s.selectedFinding.value" :doc-labels="docLabels" />
+        <PdfViewer
+          :key="result.runId"
+          ref="viewer"
+          :finding="s.selectedFinding.value"
+          :findings="result.findings"
+          :doc-labels="docLabels"
+          @select="onPick"
+        />
       </div>
     </div>
     <ExportDialog v-model:show="showExport" :result="result" />
@@ -82,6 +211,13 @@ function onSeverity(sev: Severity) {
   gap: 12px;
 }
 .bar {
+  position: sticky;
+  top: 53px;
+  z-index: 6;
+  margin: 0 -20px;
+  padding: 8px 20px;
+  background: color-mix(in srgb, var(--bp-bg) 90%, transparent);
+  backdrop-filter: blur(6px);
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -114,8 +250,8 @@ function onSeverity(sev: Severity) {
 }
 .right {
   position: sticky;
-  top: 70px;
-  height: calc(100vh - 90px);
+  top: 104px;
+  height: calc(100vh - 118px);
   min-width: 0;
 }
 .tabs {

@@ -1,17 +1,105 @@
+/*
+ * 学术纸张风设计令牌。
+ * 亮色：米白纸张 + 墨蓝 + 朱红 / 赭黄；暗色：夜读灯下的深灰纸。
+ * 只用系统字体（CSP font-src 'self' data:，不加载任何外部字体）。
+ */
 :root {
-  --bp-ink: #1c2430;
-  --bp-muted: #5b6676;
-  --bp-line: #e3e7ee;
-  --bp-bg: #f6f7f9;
-  --bp-panel: #ffffff;
+  --bp-serif: 'Source Han Serif SC', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
+  --bp-sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --bp-mono: ui-monospace, 'Cascadia Mono', Consolas, 'Microsoft YaHei', monospace;
+
+  --bp-bg: #f3efe6;
+  --bp-bg-grain: rgba(120, 100, 60, 0.035);
+  --bp-panel: #fffdf8;
+  --bp-panel-2: #faf6ec;
+  --bp-ink: #1f2330;
+  --bp-ink-2: #3d4250;
+  --bp-muted: #6e685b;
+  --bp-line: #e3dccd;
+  --bp-line-strong: #cfc5b1;
   --bp-accent: #1f3a5f;
-  --bp-high: #c0392b;
-  --bp-medium: #b7791f;
-  --bp-info: #3b6ea5;
-  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --bp-accent-hover: #2c4f7c;
+  --bp-accent-soft: #e5ebf2;
+  --bp-on-accent: #fffdf8;
+  --bp-high: #b0382c;
+  --bp-high-soft: #f8e7e3;
+  --bp-medium: #a66d14;
+  --bp-medium-ink: #8a5a10;
+  --bp-medium-soft: #f8eed9;
+  --bp-info: #36679b;
+  --bp-info-soft: #e5edf6;
+  --bp-ok: #2d7449;
+  --bp-ok-soft: #e4f1e8;
+  --bp-mark: #ffe08a;
+  --bp-code: #f1ece1;
+  --bp-stage: #e4dfd4;
+  --bp-shadow: 0 1px 2px rgba(60, 45, 20, 0.06), 0 4px 14px rgba(60, 45, 20, 0.06);
+  --bp-shadow-lg: 0 2px 6px rgba(60, 45, 20, 0.08), 0 14px 40px rgba(60, 45, 20, 0.1);
+  --bp-radius: 10px;
+
+  color-scheme: light;
+  font-family: var(--bp-sans);
   color: var(--bp-ink);
   background: var(--bp-bg);
 }
+
+:root[data-theme='dark'] {
+  --bp-bg: #15171b;
+  --bp-bg-grain: rgba(255, 240, 210, 0.018);
+  --bp-panel: #1d2026;
+  --bp-panel-2: #22262d;
+  --bp-ink: #e7e2d6;
+  --bp-ink-2: #c9c3b6;
+  --bp-muted: #9b9588;
+  --bp-line: #2f333b;
+  --bp-line-strong: #434853;
+  --bp-accent: #8fb3de;
+  --bp-accent-hover: #a9c5e8;
+  --bp-accent-soft: #233243;
+  --bp-on-accent: #10141a;
+  --bp-high: #e57d70;
+  --bp-high-soft: #3a2422;
+  --bp-medium: #dba84f;
+  --bp-medium-ink: #e3b766;
+  --bp-medium-soft: #372d1c;
+  --bp-info: #7fabda;
+  --bp-info-soft: #1f2c3b;
+  --bp-ok: #74c08f;
+  --bp-ok-soft: #1d3125;
+  --bp-mark: #6b5514;
+  --bp-code: #262a31;
+  --bp-stage: #0f1114;
+  --bp-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+  --bp-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 14px 40px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; min-height: 100%; }
-body { min-height: 100vh; }
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(var(--bp-bg-grain) 1px, transparent 1px) 0 0 / 4px 4px,
+    var(--bp-bg);
+  transition: background-color 0.2s;
+}
+::selection { background: var(--bp-mark); color: var(--bp-ink); }
+
+kbd {
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--bp-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bp-panel);
+  color: var(--bp-ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -10,6 +10,9 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  // 显式绑定 IPv4：Windows 上 localhost 默认解析到 ::1，部分环境下 IPv6 回环被拦截导致无法访问。
+  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  preview: { host: '127.0.0.1' },
   worker: { format: 'es' },
   build: {
     target: 'es2022',

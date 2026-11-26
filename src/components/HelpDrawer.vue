@@ -5,6 +5,22 @@ import { PRESETS } from '@/presets'
 import { DISCLAIMER } from '@/domain/labels'
 
 const show = defineModel<boolean>('show', { required: true })
+const tab = defineModel<string>('tab', { default: 'rules' })
+
+const KEYS: Array<[string[], string]> = [
+  [['J', '↓'], '下一条发现'],
+  [['K', '↑'], '上一条发现'],
+  [['Home'], '第一条发现'],
+  [['R'], '把选中的发现标记为“已在源文件中修改”'],
+  [['I'], '把选中的发现标记为“忽略：误报”'],
+  [['U'], '把选中的发现恢复为待处理'],
+  [['['], '同一发现的上一处出现'],
+  [[']'], '同一发现的下一处出现'],
+  [['←', '→'], '原页上一页 / 下一页'],
+  [['+', '−'], '放大 / 缩小原页'],
+  [['0'], '原页适应宽度'],
+  [['?'], '打开本页'],
+]
 
 const IMPL: Record<string, string> = { implemented: '已按条款调整', partial: '部分实现', reference: '仅条款摘要' }
 
@@ -24,7 +40,7 @@ const FIXES: Array<[string, string]> = [
 <template>
   <n-drawer v-model:show="show" :width="'min(680px, 100vw)'" placement="right">
     <n-drawer-content title="帮助" closable :native-scrollbar="false">
-      <n-tabs type="line" animated>
+      <n-tabs v-model:value="tab" type="line" animated>
         <n-tab-pane name="rules" tab="检查什么">
           <table class="t">
             <tbody>
@@ -62,12 +78,24 @@ const FIXES: Array<[string, string]> = [
           </div>
           <p class="muted">网址仅作文本展示，请自行复制到浏览器核对。会场政策可能更新，请以官方页面为准。</p>
         </n-tab-pane>
+        <n-tab-pane name="keys" tab="快捷键">
+          <p class="muted">在结果页使用；光标在输入框或下拉菜单中时不生效。</p>
+          <table class="t keys">
+            <tbody>
+              <tr v-for="[ks, d] in KEYS" :key="d">
+                <td class="k"><template v-for="(k, i) in ks" :key="k"><kbd>{{ k }}</kbd><span v-if="i < ks.length - 1" class="muted"> / </span></template></td>
+                <td>{{ d }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="muted">在原页上点击任意一个淡色框，可以跳到对应的发现。</p>
+        </n-tab-pane>
         <n-tab-pane name="limits" tab="隐私与局限">
           <h3>隐私</h3>
           <ul>
             <li>PDF 只在当前标签页的内存中解析，不上传、不缓存到磁盘；关闭或刷新页面即清除。</li>
             <li>页面的内容安全策略禁止向其他站点发起请求；不使用云端 AI、统计或第三方字体。</li>
-            <li>只有会场预设选择会保存在本机浏览器（localStorage），不包含任何稿件内容。</li>
+            <li>只有会场预设和亮 / 暗主题选择会保存在本机浏览器（localStorage），不包含任何稿件内容。</li>
             <li>报告默认脱敏、隐藏文件名，并在下载前提示可能含有身份信息。</li>
           </ul>
           <h3>检查不到的内容</h3>
@@ -105,8 +133,13 @@ const FIXES: Array<[string, string]> = [
   color: var(--bp-muted);
   font-size: 12px;
 }
+.keys .k {
+  white-space: nowrap;
+  width: 120px;
+}
 h3 {
-  font-size: 14px;
+  font-family: var(--bp-serif);
+  font-size: 15px;
   margin: 16px 0 6px;
 }
 ul {
@@ -142,7 +175,8 @@ ul {
 }
 .disclaimer {
   font-size: 12px;
-  background: #f6f7f9;
+  background: var(--bp-panel-2);
+  border-left: 3px solid var(--bp-line-strong);
   padding: 10px;
   border-radius: 6px;
 }

@@ -29,10 +29,9 @@ async function guardNetwork(page: Page) {
   return { external, nonGet, errors }
 }
 
-/** 自定义词放在可折叠的 <details> 里，空的时候默认收起 */
+/** 自定义词输入框始终可见（第 3 步卡片）；滚动到可见即可 */
 async function openTerms(page: Page) {
-  const details = page.locator('details.terms')
-  if (!(await details.evaluate((d) => (d as HTMLDetailsElement).open))) await details.locator('summary').click()
+  await page.getByTestId('terms-input').scrollIntoViewIfNeeded()
 }
 
 async function scanLeakyUpload(page: Page) {

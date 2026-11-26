@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { NButton, NEmpty, NSelect } from 'naive-ui'
 import type { Finding, FindingCategory, Severity } from '@/domain/types'
 import { CATEGORY_LABEL, SEVERITY_LABEL, isDismissed } from '@/domain/labels'
@@ -59,11 +59,38 @@ function reset() {
   filter.review = 'all'
 }
 
+const cardsEl = ref<HTMLElement | null>(null)
+
+/** 选中项变化时（键盘、原页点击）把卡片滚到可见区域 */
+watch(
+  () => s.state.selectedFindingId,
+  async (id) => {
+    if (!id) return
+    await nextTick()
+    const el = cardsEl.value?.querySelector<HTMLElement>(`[data-finding-id="${CSS.escape(id)}"]`)
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    if (r.top < 70 || r.bottom > window.innerHeight - 10) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  },
+)
+
 defineExpose({
   showSeverity(sev: Severity) {
     filter.severity = sev
+    filter.category = 'all'
     filter.review = 'all'
   },
+  showCategory(cat: FindingCategory) {
+    filter.category = cat
+    filter.severity = 'all'
+    filter.review = 'todo'
+  },
+  /** 让被选中的发现在当前筛选下可见（例如在原页点了一个已忽略的框） */
+  reveal(id: string) {
+    if (visible.value.some((f) => f.id === id)) return
+    reset()
+  },
+  visibleIds: () => visible.value.map((f) => f.id),
 })
 </script>
 
@@ -76,10 +103,11 @@ defineExpose({
       <n-select v-model:value="filter.review" size="small" :options="reviewOptions" aria-label="按复核状态筛选" data-testid="filter-review" />
     </div>
     <div class="count">
-      显示 {{ visible.length }} / {{ findings.length }} 条
+      <span>显示 {{ visible.length }} / {{ findings.length }} 条</span>
       <n-button v-if="filtered" text size="tiny" type="primary" @click="reset">显示全部</n-button>
+      <span class="kbd-hint"><kbd>J</kbd> <kbd>K</kbd> 切换 · <kbd>R</kbd> 已修改 · <kbd>?</kbd> 快捷键</span>
     </div>
-    <div v-if="visible.length" class="cards" data-testid="finding-list">
+    <div v-if="visible.length" ref="cardsEl" class="cards" data-testid="finding-list">
       <FindingCard
         v-for="f in visible"
         :key="f.id"
@@ -115,6 +143,14 @@ defineExpose({
   gap: 8px;
   align-items: center;
 }
+.kbd-hint {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.kbd-hint kbd {
+  font-size: 10px;
+  padding: 0 4px;
+}
 .cards {
   display: flex;
   flex-direction: column;
@@ -124,6 +160,9 @@ defineExpose({
   padding: 40px 0;
 }
 @media (max-width: 640px) {
+  .kbd-hint {
+    display: none;
+  }
   .filters {
     grid-template-columns: 1fr 1fr;
   }
