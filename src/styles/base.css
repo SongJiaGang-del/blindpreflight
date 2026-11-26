@@ -1,0 +1,17 @@
+:root {
+  --bp-ink: #1c2430;
+  --bp-muted: #5b6676;
+  --bp-line: #e3e7ee;
+  --bp-bg: #f6f7f9;
+  --bp-panel: #ffffff;
+  --bp-accent: #1f3a5f;
+  --bp-high: #c0392b;
+  --bp-medium: #b7791f;
+  --bp-info: #3b6ea5;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--bp-ink);
+  background: var(--bp-bg);
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; min-height: 100%; }
+body { min-height: 100vh; }
