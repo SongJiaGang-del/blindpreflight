@@ -11,6 +11,9 @@ export type ErrorCode =
   | 'PARTIAL_TEXT'
   | 'WORKER_FAILED'
   | 'CANCELLED'
+  | 'SOURCE_TOO_LARGE'
+  | 'SOURCE_UNREADABLE'
+  | 'OCR_FAILED'
 
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   UNSUPPORTED_TYPE: '这不是可识别的 PDF 文件（文件头不是 %PDF-）。请导出为 PDF 后重试。',
@@ -25,6 +28,9 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   PARTIAL_TEXT: '部分页面文本无法抽取，结果只覆盖已处理的页面。',
   WORKER_FAILED: 'PDF 解析线程未能启动或中途失败。请刷新页面重试；若仍失败，换用最新版 Chromium / Firefox。',
   CANCELLED: '已取消。',
+  SOURCE_TOO_LARGE: '源文件包过大：压缩包最多 50 MB，解压后最多 300 MB / 5000 个文件。请去掉数据集、模型权重等大文件后重试。',
+  SOURCE_UNREADABLE: '源文件无法读取：只支持 .zip 压缩包，或单个 .tex / .bib 文本文件。',
+  OCR_FAILED: '本地 OCR 未能完成（识别组件加载失败或浏览器不支持 WebAssembly）。其余检查结果不受影响。',
 }
 
 export class PreflightError extends Error {

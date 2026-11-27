@@ -35,6 +35,10 @@ const pages = computed(() => [...new Set(props.finding.occurrences.map((o) => o.
 const where = computed(() => {
   const f = props.finding
   const bits = [props.docLabel]
+  if (f.documentRole === 'source') {
+    if (f.field) bits.push(f.field)
+    return bits.join(' · ')
+  }
   if (f.page == null) bits.push('文档级')
   else bits.push(pages.value.length > 1 ? `第 ${pages.value.slice(0, 6).join('、')}${pages.value.length > 6 ? '…' : ''} 页` : `第 ${f.page} 页`)
   if (f.zone) bits.push(ZONE_LABEL[f.zone])

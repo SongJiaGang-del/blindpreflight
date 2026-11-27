@@ -32,6 +32,10 @@ export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   fontName: '字体名',
   revision: '旧版本残留',
   template: '会场模板',
+  sourceAuthor: '源码作者信息',
+  sourceComment: '源码注释与隐藏内容',
+  sourceArtifact: '版本库与构建残留',
+  sourceMetadata: '包内文件元数据',
 }
 
 export const SOURCE_LABEL: Record<FindingSource, string> = {
@@ -44,6 +48,7 @@ export const SOURCE_LABEL: Record<FindingSource, string> = {
   image: '嵌入图片',
   font: '字体资源',
   revision: '增量保存的旧版本',
+  source: '源文件包',
 }
 
 export const REVIEW_LABEL: Record<ReviewStatus, string> = {
@@ -79,6 +84,7 @@ export const CAPABILITY_LABEL: Record<CoverageCapability, string> = {
   images: '图片 / 扫描内容',
   hiddenContent: '隐藏内容',
   supplements: '补充材料',
+  sourceFiles: '源文件包',
 }
 
 export const COVERAGE_LABEL: Record<CoverageStatus, string> = {

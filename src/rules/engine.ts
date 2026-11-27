@@ -9,6 +9,7 @@ import type {
   ScanOptions,
   ScanResult,
   Severity,
+  SourceFacts,
 } from '@/domain/types'
 import { RULESET_VERSION } from '@/domain/limits'
 import { getPreset, policyRefsFor } from '@/presets'
@@ -29,6 +30,7 @@ import { linkTargetsMatch, ruleEmbeddedLinks, ruleUrls } from './links'
 import { ruleAcknowledgments, ruleFunding, ruleImplicitIdentity, ruleSelfCitation } from './sections'
 import { deriveNames } from './terms'
 import { ruleFontNames, ruleImageMetadata, ruleRevisions, ruleTemplateMarker } from './binary'
+import { SOURCE_RULE_FNS } from './source'
 
 type RuleFn = (doc: DocumentFacts, ctx: RuleContext) => FindingDraft[]
 
@@ -59,6 +61,10 @@ export const RULES: RuleDef[] = [
   { id: 'R19', title: '字体名', description: '页面字体名中的作者名、自定义词或机构词。', fns: [ruleFontNames] },
   { id: 'R20', title: '增量保存的旧版本', description: '文件中残留的旧版本元数据（如改稿前的作者名）与保存版本数。', fns: [ruleRevisions] },
   { id: 'R21', title: '会场模板标记', description: '审稿模式模板应印出的标记（如 CVPR 的 Submission # 与 CONFIDENTIAL REVIEW COPY）。', fns: [ruleTemplateMarker] },
+  { id: 'R22', title: '源码作者信息', description: String.raw`源文件包：\author、\thanks、\affiliation、pdfauthor 与终稿开关。`, fns: [] },
+  { id: 'R23', title: '源码注释与隐藏内容', description: String.raw`源文件包：LaTeX 注释、\iffalse 块，以及代码 / 说明文件中的姓名、邮箱、路径、版权人。`, fns: [] },
+  { id: 'R24', title: '版本库与构建残留', description: '源文件包：.git 目录、编译日志 / synctex 中的本机路径、临时文件。', fns: [] },
+  { id: 'R25', title: '包内文件元数据', description: '源文件包：图片 EXIF / PNG 文本、Office 文档属性、含姓名的文件名。', fns: [] },
 ]
 
 export function ruleTitle(id: string): string {
@@ -176,6 +182,11 @@ function mergeKnownNames(current: DerivedName[], known: NonNullable<ScanOptions[
   return out
 }
 
+/** 源文件包在发现里以 “src” 文档出现；规则构造只用到 id / 名称 / 角色 */
+function sourceDoc(src: SourceFacts): DocumentFacts {
+  return { id: 'src', role: 'source', displayName: src.name, byteSize: src.byteSize, pageCount: 0, parseStatus: 'completed', info: {}, xmp: null, pages: [], attachments: [], internalLinkCount: 0, coverage: [], warnings: [] }
+}
+
 export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: RunMeta = {}): ScanResult {
   const now = meta.now ?? (() => new Date())
   const startedAt = now().toISOString()
@@ -184,7 +195,14 @@ export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: 
     preset,
     userTerms: options.userTerms,
     strictShortTerms: options.strictShortTerms,
-    derivedNames: mergeKnownNames(deriveNames(documents), options.knownNames ?? []),
+    derivedNames: mergeKnownNames(deriveNames(documents), [
+      ...(options.knownNames ?? []),
+      ...(options.source?.authorNames ?? []).map((raw) => ({
+        raw,
+        tokens: [...raw].every((c) => /\p{Script=Han}/u.test(c)) ? [raw] : raw.toLowerCase().split(/\s+/).filter((t) => t.length >= 2),
+        source: String.raw`源文件的 \author`,
+      })),
+    ]),
     allDocs: documents,
   }
   const all: Finding[] = []
@@ -196,6 +214,15 @@ export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: 
     }
     const refs = policyRefsFor(preset, rule.id)
     let count = 0
+    const srcFn = SOURCE_RULE_FNS[rule.id]
+    if (srcFn && options.source) {
+      for (const draft of srcFn(options.source, ctx)) {
+        const f = materialize(sourceDoc(options.source), draft, refs, RULESET_VERSION)
+        f.severity = applyOverride(f.severity, preset.severityOverrides[rule.id])
+        all.push(f)
+        count++
+      }
+    }
     for (const doc of documents) {
       for (const fn of rule.fns) {
         for (const draft of fn(doc, ctx)) {
@@ -216,16 +243,28 @@ export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: 
     else byId.set(f.id, f)
   }
   const merged = mergeFindings([...byId.values()])
-  const findings = sortFindings(merged, documents.map((d) => d.id))
+  const findings = sortFindings(merged, [...documents.map((d) => d.id), 'src'])
   // 规则命中计数按合并后的结果重算
   for (const r of rules) if (r.status === 'ran') r.findingCount = findings.filter((f) => f.ruleIds.includes(r.ruleId)).length
 
   const coverage: CoverageEntry[] = documents.flatMap((d) => d.coverage)
+  const ocrPages = documents.reduce((n, d) => n + d.pages.filter((p) => p.ocr).length, 0)
   coverage.push({
     documentId: null,
     capability: 'images',
-    status: 'unsupported',
-    reason: '不识别图片、扫描页与图表中的文字（无 OCR）。',
+    status: ocrPages ? 'partial' : 'unsupported',
+    reason: ocrPages
+      ? `已对 ${ocrPages} 页扫描 / 图片页做本地 OCR；文字正常的页面里的插图、图表与截图中的文字没有识别。`
+      : '没有做 OCR：图片、扫描页与图表中的文字没有检查。可以在“放入稿件”中开启本地 OCR。',
+  })
+  const src = options.source
+  coverage.push({
+    documentId: null,
+    capability: 'sourceFiles',
+    status: src ? (src.warnings.length ? 'partial' : 'completed') : 'skipped',
+    reason: src
+      ? `已检查源文件包中的 ${src.texts.length} 个文本文件与 ${src.meta.length} 个带元数据的图片 / 文档（共 ${src.files.length} 个文件）。${src.warnings.join(' ')}`
+      : '没有导入源文件包（LaTeX / zip）。若要公开源码或随补充材料提交代码，建议一并检查。',
   })
   coverage.push({
     documentId: null,
@@ -248,5 +287,6 @@ export function runScan(documents: DocumentFacts[], options: ScanOptions, meta: 
     coverage,
     rules,
     userTermCount: options.userTerms.length,
+    source: src ? { name: src.name, byteSize: src.byteSize, fileCount: src.files.length, textCount: src.texts.length, warnings: [...src.warnings] } : null,
   }
 }

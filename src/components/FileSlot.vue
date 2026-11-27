@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { NButton } from 'naive-ui'
 import { visibleText } from '@/utils/safe-text'
 
-const props = defineProps<{ label: string; hint: string; file: File | null; disabled?: boolean; testId: string; large?: boolean }>()
+const props = defineProps<{ label: string; hint: string; file: File | null; disabled?: boolean; testId: string; large?: boolean; accept?: string; sub?: string }>()
 const emit = defineEmits<{ change: [file: File | null] }>()
 
 const input = ref<HTMLInputElement | null>(null)
@@ -36,7 +36,7 @@ function size(n: number) {
     :data-testid="testId"
     role="button"
     tabindex="0"
-    :aria-label="`${label}：${file ? '已选择，点击更换' : '点击选择 PDF 或拖入文件'}`"
+    :aria-label="`${label}：${file ? '已选择，点击更换' : '点击选择文件或拖入'}`"
     @click="pick"
     @keydown.enter.prevent="pick"
     @keydown.space.prevent="pick"
@@ -44,7 +44,7 @@ function size(n: number) {
     @dragleave="over = false"
     @drop.prevent="onDrop"
   >
-    <input ref="input" type="file" accept="application/pdf,.pdf" hidden :data-testid="`${testId}-input`" @change="onInput" />
+    <input ref="input" type="file" :accept="accept ?? 'application/pdf,.pdf'" hidden :data-testid="`${testId}-input`" @change="onInput" />
     <div class="icon" aria-hidden="true">
       <svg v-if="file" viewBox="0 0 40 48" class="doc filled-doc">
         <path d="M4 3h22l10 10v32H4z" class="sheet" />
@@ -70,7 +70,7 @@ function size(n: number) {
       </template>
       <template v-else>
         <div class="slot-empty">{{ hint }}</div>
-        <div v-if="large" class="slot-sub">PDF · 单份 ≤ 25 MB / 100 页</div>
+        <div v-if="large || sub" class="slot-sub">{{ sub ?? 'PDF · 单份 ≤ 25 MB / 100 页' }}</div>
       </template>
     </div>
   </div>

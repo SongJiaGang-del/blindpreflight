@@ -181,3 +181,70 @@ test('自定义预设：新建 → 选中 → 检查生效；本地只存规则�
   expect(net.nonGet).toEqual([])
   expect(net.errors).toEqual([])
 })
+
+test('本地 OCR：纯图片页中的邮箱被识别，OCR 资源全部同源加载', async ({ page }) => {
+  test.setTimeout(120_000)
+  const net = await guardNetwork(page)
+  await page.goto('/')
+  // 在浏览器里把一页“扫描稿”画成 PNG（只有图片，没有文字层）
+  const png = await page.evaluate(async () => {
+    const c = new OffscreenCanvas(1224, 1584)
+    const g = c.getContext('2d')!
+    g.fillStyle = '#fff'
+    g.fillRect(0, 0, c.width, c.height)
+    g.fillStyle = '#000'
+    g.font = 'bold 48px Arial, Helvetica, sans-serif'
+    g.fillText('Robust Widget Alignment', 300, 220)
+    g.font = '40px Arial, Helvetica, sans-serif'
+    g.fillText('Alex Example', 480, 320)
+    g.fillText('alex.example@example-state.edu', 330, 380)
+    g.fillText('1 Introduction', 140, 600)
+    g.fillText('We study the alignment of widgets.', 140, 660)
+    const blob = await c.convertToBlob({ type: 'image/jpeg', quality: 0.92 })
+    return Array.from(new Uint8Array(await blob.arrayBuffer()))
+  })
+  const { PDFDocument } = await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const img = await doc.embedJpg(new Uint8Array(png))
+  doc.addPage([612, 792]).drawImage(img, { x: 0, y: 0, width: 612, height: 792 })
+  const pdf = Buffer.from(await doc.save())
+
+  await page.getByTestId('slot-main-input').setInputFiles({ name: 'scan.pdf', mimeType: 'application/pdf', buffer: pdf })
+  await page.getByTestId('ocr-toggle').click()
+  await page.getByTestId('start-scan').click()
+  await expect(page.getByTestId('finding-list')).toBeVisible({ timeout: 100_000 })
+  const email = page.getByTestId('finding-R02').first()
+  await expect(email).toBeVisible()
+  await expect(email).toContainText('本地 OCR')
+
+  expect(net.external).toEqual([])
+  expect(net.nonGet).toEqual([])
+  expect(net.errors).toEqual([])
+})
+
+test('PWA：安装后断网仍能打开并检查示例稿件；清单与图标可用', async ({ page, context }) => {
+  test.setTimeout(90_000)
+  await page.goto('/')
+  const manifest = await page.evaluate(async () => {
+    const href = document.querySelector('link[rel=manifest]')!.getAttribute('href')!
+    const m = await (await fetch(href)).json()
+    const icons = await Promise.all(m.icons.map(async (i: { src: string }) => (await fetch(new URL(i.src, new URL(href, location.href)))).status))
+    return { name: m.short_name, icons }
+  })
+  expect(manifest.name).toBe('BlindPreflight')
+  expect(manifest.icons.every((s: number) => s === 200)).toBe(true)
+
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready
+  })
+  await expect(page.getByTestId('offline-ready')).toBeVisible({ timeout: 30_000 })
+
+  await context.setOffline(true)
+  await page.reload()
+  await expect(page.getByTestId('privacy-note')).toBeVisible()
+  await page.getByTestId('sample-leaky').click()
+  await page.getByTestId('start-scan').click()
+  await expect(page.getByTestId('finding-list')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('finding-R02').first()).toBeVisible()
+  await context.setOffline(false)
+})

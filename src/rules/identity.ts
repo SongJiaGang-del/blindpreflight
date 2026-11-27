@@ -330,7 +330,7 @@ function expandInstitution(text: string, s: number, e: number, sameZone: (from: 
   phrase = text.slice(a, b)
   const trail = /(?:\s+(?:of|for|and|the|&|in|at))+$/i.exec(phrase)
   if (trail) b -= trail[0].length
-  if (text[b - 1] === '.' && !/(?:Inc|Ltd|Co|St|Univ|Dept)\.$/.test(text.slice(a, b))) b--
+  if (text[b - 1] === '.' && !/\b(?:Inc|Ltd|Co|St|Univ|Dept)\.$/.test(text.slice(a, b))) b--
   return [a, b]
 }
 

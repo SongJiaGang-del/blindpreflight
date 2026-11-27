@@ -103,6 +103,7 @@ export interface Report {
 }
 
 function docAlias(result: ScanResult, id: string, hide: boolean): string {
+  if (id === 'src') return hide ? '源文件包' : (result.source?.name ?? '源文件包')
   const doc = result.documents.find((d) => d.id === id)
   if (!doc) return id
   if (!hide) return doc.displayName
@@ -288,7 +289,21 @@ export function buildReport(
       byteSize: d.byteSize,
       parseStatus: d.parseStatus,
       warnings: d.warnings.map(scrubName),
-    })),
+    })).concat(
+      result.source
+        ? [
+            {
+              id: 'src',
+              name: docAlias(result, 'src', hide),
+              role: 'source',
+              pageCount: 0,
+              byteSize: result.source.byteSize,
+              parseStatus: 'completed',
+              warnings: result.source.warnings.map(scrubName),
+            },
+          ]
+        : [],
+    ),
     summary: {
       total: result.findings.length,
       bySeverity,

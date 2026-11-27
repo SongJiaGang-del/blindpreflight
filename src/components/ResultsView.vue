@@ -35,6 +35,10 @@ async function onNewVersion(e: Event) {
   if (s.state.selectionError) message.warning(s.state.selectionError)
   else if (s.state.phase === 'error' && s.state.error) message.error(s.state.error)
 }
+function enableOcr() {
+  s.setOcr(true)
+  void s.start()
+}
 function onCompareFilter(tag: CompareTag | 'reopened') {
   list.value?.showCompare(tag)
   mobileTab.value = 'findings'
@@ -42,7 +46,8 @@ function onCompareFilter(tag: CompareTag | 'reopened') {
 const mobileTab = ref<'findings' | 'page'>('findings')
 
 /** 界面上的文件标签不用文件名，避免截图或录屏时泄露 */
-const docLabels = computed(() => Object.fromEntries(props.result.documents.map((d) => [d.id, SLOT_LABEL[d.id as SlotId] ?? d.id])))
+const pdfLabels = computed(() => Object.fromEntries(props.result.documents.map((d) => [d.id, SLOT_LABEL[d.id as SlotId] ?? d.id])))
+const docLabels = computed(() => (props.result.source ? { ...pdfLabels.value, src: '源文件包' } : pdfLabels.value))
 
 const presetOptions = computed(() => s.presetList.value.map((p) => ({ value: p.id, label: `${p.venue}${p.year ? ` ${p.year}` : ''}${p.custom ? '（自定义）' : ''}` })))
 
@@ -208,7 +213,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
     <div class="cols" :class="`show-${mobileTab}`">
       <div class="left">
-        <ResultsSummary :result="result" :doc-labels="docLabels" @severity="onSeverity" @category="onCategory" @page="onPage" />
+        <ResultsSummary
+          :result="result"
+          :doc-labels="docLabels"
+          @severity="onSeverity"
+          @category="onCategory"
+          @page="onPage"
+          @ocr="enableOcr"
+        />
         <ComparePanel
           v-if="s.comparison.value"
           :cmp="s.comparison.value"
@@ -225,7 +237,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           ref="viewer"
           :finding="s.selectedFinding.value"
           :findings="result.findings"
-          :doc-labels="docLabels"
+          :doc-labels="pdfLabels"
           @select="onPick"
         />
       </div>

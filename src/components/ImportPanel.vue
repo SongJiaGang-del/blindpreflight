@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { NAlert, NButton, NCheckbox, NInput, NProgress } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NInput, NProgress, NRadioButton, NRadioGroup } from 'naive-ui'
 import { SLOT_IDS, SLOT_LABEL, useSession } from '@/app/session'
 import { parseUserTerms } from '@/rules/terms'
 import { RULES } from '@/rules/engine'
@@ -24,7 +24,7 @@ const steps = computed(() => [
     n: 1,
     title: '放入稿件',
     done: !!st.files.main,
-    note: st.files.main ? `主稿${suppCount.value ? ` + ${suppCount.value} 份补充` : ''}` : '待选择',
+    note: st.files.main ? `主稿${suppCount.value ? ` + ${suppCount.value} 份补充` : ''}${st.sourceFile ? ' + 源文件' : ''}` : '待选择',
     target: 'step-files',
   },
   { n: 2, title: '选择会场', done: true, note: presetName.value, target: 'step-venue' },
@@ -46,6 +46,8 @@ const progressText = computed(() => {
   const doc = SLOT_LABEL[p.slot]
   if (st.phase === 'reading') return `正在读取${doc}…`
   if (st.phase === 'parsing') return p.total ? `正在解析${doc}：第 ${p.done} / ${p.total} 页` : `正在打开${doc}…`
+  if (st.phase === 'source') return '正在读取源文件包…'
+  if (st.phase === 'ocr') return p.total ? `正在本地 OCR 识别${doc}：第 ${p.done} / ${p.total} 页` : '正在加载本地 OCR 组件…'
   if (st.phase === 'scanning') return '正在运行检查规则…'
   return ''
 })
@@ -57,7 +59,7 @@ const percent = computed(() => {
   return Math.min(98, Math.round(((p.docIndex + per) / p.docCount) * 100))
 })
 const HINTS: Record<string, string> = {
-  main: '点击选择，或把投稿 PDF 拖到页面任意位置',
+  main: '点击选择，或把投稿 PDF（以及源文件 zip）拖到页面任意位置',
   'supp-1': '可选：附录 / 补充材料',
   'supp-2': '可选：第二份补充材料',
 }
@@ -161,6 +163,27 @@ onBeforeUnmount(() => {
           :class="{ main: id === 'main' }"
           @change="(f) => s.setFile(id, f)"
         />
+        <FileSlot
+          label="源文件包（可选）"
+          hint="LaTeX 工程或代码的 .zip，或单个 .tex"
+          sub="检查注释、\author、.git、编译日志、图片元数据 · ≤ 50 MB"
+          accept=".zip,.tex,.bib,application/zip"
+          :file="st.sourceFile"
+          :disabled="s.busy.value"
+          test-id="slot-src"
+          class="src"
+          @change="(f) => s.setSourceFile(f)"
+        />
+      </div>
+      <div class="ocr">
+        <n-checkbox :checked="st.ocr" :disabled="s.busy.value" data-testid="ocr-toggle" @update:checked="(v: boolean) => s.setOcr(v)">
+          对扫描页 / 图片页做本地 OCR
+        </n-checkbox>
+        <n-radio-group v-if="st.ocr" size="small" :value="st.ocrLang" :disabled="s.busy.value" @update:value="(v: 'eng' | 'eng+chi_sim') => s.setOcr(true, v)">
+          <n-radio-button value="eng">英文</n-radio-button>
+          <n-radio-button value="eng+chi_sim">中文 + 英文</n-radio-button>
+        </n-radio-group>
+        <span class="muted small">只识别文字缺失或乱码的页面，在本机完成；首次使用需加载约 {{ st.ocrLang === 'eng' ? 6 : 8 }} MB 识别组件，每页需要几秒。</span>
       </div>
     </div>
 
@@ -462,8 +485,20 @@ onBeforeUnmount(() => {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.files :deep(.main) {
+.files :deep(.main),
+.files :deep(.src) {
   grid-column: 1 / -1;
+}
+.files :deep(.src) {
+  min-height: 64px;
+}
+.ocr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px dashed var(--bp-line);
 }
 .two {
   display: grid;

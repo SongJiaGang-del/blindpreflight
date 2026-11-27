@@ -6,3 +6,4 @@ playwright-report/
 coverage/
 *.local
 .DS_Store
+public/ocr/

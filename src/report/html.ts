@@ -60,7 +60,7 @@ ${f.review ? `<div class="small">复核状态：${e(REVIEW_LABEL[f.review.status
 export function renderReportHtml(r: Report): string {
   const s = r.summary
   const docs = r.documents
-    .map((d) => `<tr><td>${e(d.name)}</td><td>${d.role === 'main' ? '主稿' : '补充材料'}</td><td>${d.pageCount}</td><td>${e(d.parseStatus)}</td></tr>`)
+    .map((d) => `<tr><td>${e(d.name)}</td><td>${d.role === 'main' ? '主稿' : d.role === 'source' ? '源文件包' : '补充材料'}</td><td>${d.role === 'source' ? '—' : d.pageCount}</td><td>${e(d.parseStatus)}</td></tr>`)
     .join('')
   const cov = r.coverage
     .map(

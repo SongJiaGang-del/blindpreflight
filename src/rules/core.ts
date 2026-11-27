@@ -116,6 +116,8 @@ export interface FindingDraft {
   rect?: BBox | null
   /** 非文本来源的展示内容 */
   snippet?: string
+  /** 非文本来源：命中在 snippet 中的位置（用于高亮） */
+  snippetMatch?: [number, number] | null
   zone?: Zone | null
   field?: string | null
   linkTarget?: string | null
@@ -198,8 +200,18 @@ export function materialize(doc: DocumentFacts, d: FindingDraft, policyRefs: Pol
   } else {
     if (d.rect) bboxes = [d.rect]
     snippet = clip(snippet, LIMITS.snippetMax)
+    if (d.snippetMatch && d.snippetMatch[1] <= snippet.length) matchInSnippet = d.snippetMatch
     context = snippet
     occurrences.push({ page, bboxes, snippet })
+  }
+
+  // OCR 页的命中：提示可能有识别错误，置信度最高为“中”
+  let reasons = d.reasons
+  let confidence = d.confidence
+  if (d.text?.page.ocr) {
+    reasons = [...reasons, '这段文字来自本地 OCR 识别（扫描页 / 图片页），可能有识别错误，请对照原页确认。']
+    if (confidence === 'high') confidence = 'medium'
+    approximate = true
   }
 
   const key = [doc.id, d.ruleId, d.source, page ?? 'doc', d.text ? `${d.text.start}-${d.text.end}` : '', d.field ?? '', d.key ?? ''].join('|')
@@ -212,7 +224,7 @@ export function materialize(doc: DocumentFacts, d: FindingDraft, policyRefs: Pol
     ruleIds: [d.ruleId],
     ruleVersion: rulesetVersion,
     severity: d.severity,
-    confidence: d.confidence,
+    confidence,
     category: d.category,
     source: d.source,
     page,
@@ -226,7 +238,7 @@ export function materialize(doc: DocumentFacts, d: FindingDraft, policyRefs: Pol
     field: d.field ?? null,
     linkTarget: d.linkTarget ?? null,
     visibleText: d.visibleText ?? null,
-    reasons: d.reasons,
+    reasons,
     suggestion: d.suggestion,
     policyRefs,
     matchedUserTerm: d.matchedUserTerm ?? false,

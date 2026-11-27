@@ -27,11 +27,14 @@ function norm(s: string): string {
 
 export function matchKey(f: Finding): string {
   const hit = f.linkTarget ?? (f.matchInSnippet ? f.snippet.slice(f.matchInSnippet[0], f.matchInSnippet[1]) : f.snippet)
-  return [f.documentId, f.ruleId, f.source, f.field ?? '', norm(hit)].join('|')
+  // 源文件的字段是“路径:行号”，改稿后行号会变，对比时只看路径
+  const field = f.documentRole === 'source' ? (f.field ?? '').replace(/:\d+$/, '') : (f.field ?? '')
+  return [f.documentId, f.ruleId, f.source, field, norm(hit)].join('|')
 }
 
 export function compareScans(prev: ScanResult, next: ScanResult): Omit<Comparison, 'reopened'> {
   const both = new Set(prev.documents.map((d) => d.id).filter((id) => next.documents.some((d) => d.id === id)))
+  if (prev.source && next.source) both.add('src')
   const pool = new Map<string, Finding[]>()
   for (const f of prev.findings) {
     if (!both.has(f.documentId)) continue

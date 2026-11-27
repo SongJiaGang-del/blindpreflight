@@ -10,7 +10,10 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { DocumentFacts, ReviewDecision, ReviewStatus, ScanOptions, ScanResult } from '@/domain/types'
 import { LIMITS } from '@/domain/limits'
 import { PreflightError, isCancelled } from '@/domain/errors'
-import { extractDocument } from '@/parsers/pdf/extract'
+import { SCANNED_WARNING, extractDocument } from '@/parsers/pdf/extract'
+import { parseSourceArchive } from '@/parsers/source/archive'
+import { OCR_MAX_PAGES, type OcrLang, createOcrSession } from '@/ocr/ocr'
+import { assignZones } from '@/normalize/zones'
 import { browserAssets, loadPdfjs } from '@/parsers/pdf/pdfjs-browser'
 import { validateSelection } from '@/parsers/pdf/validate'
 import { runScan } from '@/rules/engine'
@@ -20,14 +23,17 @@ import { type CustomPresetSpec, loadCustomSpecs, saveCustomSpecs, toPreset } fro
 import { RULES } from '@/rules/engine'
 import { type Comparison, compareScans, compareTags, migrateDecisions } from './compare'
 
-export type Phase = 'idle' | 'reading' | 'parsing' | 'scanning' | 'done' | 'error' | 'cancelled'
+export type Phase = 'idle' | 'reading' | 'parsing' | 'source' | 'ocr' | 'scanning' | 'done' | 'error' | 'cancelled'
 export type SlotId = 'main' | 'supp-1' | 'supp-2'
 export const SLOT_IDS: SlotId[] = ['main', 'supp-1', 'supp-2']
 
 const PREF_KEY = 'blindpreflight.prefs.v1'
 
+/** 只存界面偏好：会场预设、是否做本地 OCR 与识别语言 */
 interface Prefs {
   presetId: string
+  ocr: boolean
+  ocrLang: OcrLang
 }
 
 function loadPrefs(): Prefs {
@@ -35,15 +41,15 @@ function loadPrefs(): Prefs {
     const raw = globalThis.localStorage?.getItem(PREF_KEY)
     const p = raw ? (JSON.parse(raw) as Partial<Prefs>) : {}
     const presetId = typeof p.presetId === 'string' && allPresets().some((x) => x.id === p.presetId) ? p.presetId : 'generic'
-    return { presetId }
+    return { presetId, ocr: p.ocr === true, ocrLang: p.ocrLang === 'eng+chi_sim' ? 'eng+chi_sim' : 'eng' }
   } catch {
-    return { presetId: 'generic' }
+    return { presetId: 'generic', ocr: false, ocrLang: 'eng' }
   }
 }
 
-function savePrefs(p: Prefs): void {
+function savePrefs(): void {
   try {
-    globalThis.localStorage?.setItem(PREF_KEY, JSON.stringify({ presetId: p.presetId }))
+    globalThis.localStorage?.setItem(PREF_KEY, JSON.stringify({ presetId: state.presetId, ocr: state.ocr, ocrLang: state.ocrLang }))
   } catch {
     /* 隐私模式等：忽略 */
   }
@@ -64,11 +70,17 @@ applyCustom()
 
 export const SLOT_LABEL: Record<SlotId, string> = { main: '主稿', 'supp-1': '补充材料 1', 'supp-2': '补充材料 2' }
 
+const initialPrefs = loadPrefs()
 const state = reactive({
-  presetId: loadPrefs().presetId,
+  presetId: initialPrefs.presetId,
+  /** 对扫描页 / 图片页做本地 OCR */
+  ocr: initialPrefs.ocr,
+  ocrLang: initialPrefs.ocrLang as OcrLang,
   termsText: '',
   strictShortTerms: false,
   files: { main: null, 'supp-1': null, 'supp-2': null } as Record<SlotId, File | null>,
+  /** 可选的源文件包（LaTeX / zip） */
+  sourceFile: null as File | null,
   phase: 'idle' as Phase,
   progress: { slot: 'main' as SlotId, done: 0, total: 0, docIndex: 0, docCount: 0 },
   error: null as string | null,
@@ -116,7 +128,20 @@ function destroyPdfs(): void {
 }
 
 function selectedFingerprints(): string {
-  return SLOT_IDS.map((id) => (state.files[id] ? fingerprint(state.files[id]!) : '-')).join('#')
+  return [...SLOT_IDS.map((id) => (state.files[id] ? fingerprint(state.files[id]!) : '-')), state.sourceFile ? fingerprint(state.sourceFile) : '-'].join('#')
+}
+
+/** 源文件（LaTeX / zip）按扩展名识别 */
+export function isSourceFile(f: File): boolean {
+  return /\.(?:zip|tex|bib)$/i.test(f.name)
+}
+
+function setSourceFile(file: File | null): void {
+  state.sourceFile = file
+  state.selectionError = null
+  if (file && !isSourceFile(file)) state.selectionError = '源文件只支持 .zip 压缩包，或单个 .tex / .bib 文件。'
+  else if (file && file.size > 50 * 1024 * 1024) state.selectionError = '源文件包超过 50 MB。请去掉数据集、模型权重等大文件后重试。'
+  else checkSelection()
 }
 
 function checkSelection(): void {
@@ -138,19 +163,21 @@ function setFile(slot: SlotId, file: File | null): void {
 
 /** 整页拖入多个文件：先填主稿，再依次填空着的补充材料槽；都满了则替换主稿 */
 function addFiles(files: File[]): void {
-  const queue = [...files]
+  const src = files.find(isSourceFile)
+  if (src) setSourceFile(src)
+  const queue = files.filter((f) => !isSourceFile(f))
   for (const id of SLOT_IDS) {
     if (!queue.length) break
     if (!state.files[id]) state.files[id] = queue.shift()!
   }
-  if (queue.length && files.length === 1) state.files.main = queue.shift()!
+  if (queue.length && queue.length === files.length && files.length === 1) state.files.main = queue.shift()!
   checkSelection()
 }
 
 function setPreset(id: string): void {
   if (!allPresets().some((p) => p.id === id)) return
   state.presetId = id
-  savePrefs({ presetId: id })
+  savePrefs()
 }
 
 async function start(): Promise<void> {
@@ -209,13 +236,68 @@ async function start(): Promise<void> {
       budget -= r.facts.pageCount
       facts.push(r.facts)
     }
+
+    // 本地 OCR：只识别文字为空、过少或乱码的页
+    const weak = facts.flatMap((d, i) => d.pages.filter((p) => p.textQuality !== 'ok').map((p) => ({ di: i, page: p })))
+    if (state.ocr && weak.length) {
+      const todo = weak.slice(0, OCR_MAX_PAGES)
+      state.phase = 'ocr'
+      state.progress = { slot: facts[todo[0]!.di]!.id as SlotId, done: 0, total: todo.length, docIndex: 0, docCount: inputs.length }
+      let session: Awaited<ReturnType<typeof createOcrSession>> | null = null
+      try {
+        session = await createOcrSession(state.ocrLang)
+        let done = 0
+        for (const { di, page } of todo) {
+          if (ctl.signal.aborted) throw new PreflightError('CANCELLED')
+          const doc = facts[di]!
+          const idx = doc.pages.indexOf(page)
+          doc.pages[idx] = await session.recognizePage(opened[di]!, page, ctl.signal)
+          done++
+          if (!stale()) state.progress = { slot: doc.id as SlotId, done, total: todo.length, docIndex: di, docCount: inputs.length }
+        }
+        for (const [di, doc] of facts.entries()) {
+          const n = doc.pages.filter((p) => p.ocr).length
+          if (!n) continue
+          assignZones(doc.pages)
+          doc.warnings = doc.warnings.filter((w) => w !== SCANNED_WARNING)
+          const img = doc.coverage.find((c) => c.capability === 'images')
+          if (img) img.reason = img.reason.replace('图片中的文字没有检查（无 OCR）', `已对 ${n} 页扫描 / 图片页做本地 OCR，文字正常的页面里的插图没有识别`)
+          const cov = doc.coverage.find((c) => c.capability === 'text')
+          if (cov) cov.reason += ` 其中 ${n} 页已用本地 OCR 识别${n < weak.filter((w) => w.di === di).length ? '（超过单次上限的页没有识别）' : ''}，识别结果可能有错字。`
+        }
+      } catch (err) {
+        if (isCancelled(err)) throw err
+        facts[0]?.warnings.push(err instanceof PreflightError ? err.message : '本地 OCR 未能完成。')
+      } finally {
+        await session?.terminate()
+      }
+      if (stale()) {
+        for (const p of opened) void p.loadingTask.destroy().catch(() => {})
+        return
+      }
+    }
     state.phase = 'scanning'
     await new Promise((r) => setTimeout(r, 0))
     if (stale()) {
       for (const p of opened) void p.loadingTask.destroy().catch(() => {})
       return
     }
-    const scan = runScan(facts, scanOptions(), { runId })
+    let source = null
+    if (state.sourceFile) {
+      state.phase = 'source'
+      const bytes = new Uint8Array(await state.sourceFile.arrayBuffer())
+      if (stale()) {
+        for (const p of opened) void p.loadingTask.destroy().catch(() => {})
+        return
+      }
+      source = await parseSourceArchive(state.sourceFile.name, bytes)
+      if (stale()) {
+        for (const p of opened) void p.loadingTask.destroy().catch(() => {})
+        return
+      }
+    }
+    state.phase = 'scanning'
+    const scan = runScan(facts, { ...scanOptions(), source }, { runId })
     rememberNames(facts)
     // 同一组文件重扫保留复核决定；换了文件则与上一版对比，并把仍然存在的发现的忽略决定带过来
     const fp = selectedFingerprints()
@@ -270,6 +352,7 @@ function clearAll(): void {
   comparison.value = null
   state.checked.clear()
   state.files = { main: null, 'supp-1': null, 'supp-2': null }
+  state.sourceFile = null
   state.termsText = ''
   state.strictShortTerms = false
   state.decisions.clear()
@@ -365,6 +448,12 @@ function importCustomPresets(list: CustomPresetSpec[]): number {
   return list.length
 }
 
+function setOcr(on: boolean, lang?: OcrLang): void {
+  state.ocr = on
+  if (lang) state.ocrLang = lang
+  savePrefs()
+}
+
 function dismissComparison(): void {
   comparison.value = null
 }
@@ -408,6 +497,8 @@ export function useSession() {
     rescanWith,
     previewScan,
     setFile,
+    setSourceFile,
+    setOcr,
     addFiles,
     setPreset,
     start,

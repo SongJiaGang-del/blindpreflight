@@ -17,9 +17,13 @@
     "postinstall": "node scripts/copy-pdfjs-assets.mjs"
   },
   "dependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "fflate": "^0.8.3",
     "naive-ui": "^2.45.3",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.5.438",
+    "tesseract.js": "^7.0.0",
     "vue": "^3.5.46"
   },
   "devDependencies": {

@@ -24,6 +24,9 @@ import { scanBinary } from './binary'
 
 export type PdfjsLib = typeof Pdfjs
 
+/** 整份文件没有文字层时的提示；做过 OCR 后由会话移除 */
+export const SCANNED_WARNING = '整份文件没有可抽取的文字，可能是扫描件。可以开启本地 OCR 后重新检查。'
+
 export interface PdfAssets {
   cMapUrl?: string
   standardFontDataUrl?: string
@@ -270,7 +273,7 @@ export async function extractDocument(input: ExtractInput, opts: ExtractOptions)
         `${weak.length} 页文本为空、过少或疑似乱码（${empty} 页无文本），可能是扫描页、图片或轮廓化文字；这些页面的正文规则未能覆盖。`,
         weak,
       )
-      if (empty === pageCount) warnings.push('整份文件没有可抽取的文字，可能是扫描件。本工具不做 OCR。')
+      if (empty === pageCount) warnings.push(SCANNED_WARNING)
     } else cov('text', 'completed', `已抽取全部 ${pageCount} 页文本。`)
 
     cov(

@@ -13,6 +13,7 @@ import {
 } from 'naive-ui'
 import { useSession } from '@/app/session'
 import { useTheme } from '@/app/theme'
+import { usePwa } from '@/app/pwa'
 import ImportPanel from '@/components/ImportPanel.vue'
 import ResultsView from '@/components/ResultsView.vue'
 import HelpDrawer from '@/components/HelpDrawer.vue'
@@ -20,6 +21,7 @@ import ClearAllButton from '@/components/ClearAllButton.vue'
 
 const s = useSession()
 const t = useTheme()
+const pwa = usePwa()
 const showHelp = ref(false)
 const helpTab = ref('rules')
 
@@ -104,6 +106,8 @@ function openHelp(tab = 'rules') {
           <div class="privacy" data-testid="privacy-note">
             <span class="dot" aria-hidden="true" />本地处理 · 不上传 · 不调用云端 AI
           </div>
+          <span v-if="pwa.offlineReady.value" class="offline" data-testid="offline-ready" title="应用已缓存在本机，断网也能打开">可离线使用</span>
+          <n-button v-if="pwa.canInstall.value" size="small" secondary data-testid="install-app" @click="pwa.promptInstall()">安装到桌面</n-button>
           <div class="acts">
             <n-tooltip>
               <template #trigger>
@@ -134,6 +138,13 @@ function openHelp(tab = 'rules') {
           </Transition>
         </main>
         <HelpDrawer v-model:show="showHelp" v-model:tab="helpTab" />
+        <Transition name="page">
+          <div v-if="pwa.updateReady.value" class="update" role="status">
+            <span>新版本已下载。刷新后生效（会清空当前的文件与检查结果）。</span>
+            <n-button size="tiny" type="primary" @click="pwa.applyUpdate()">立即刷新</n-button>
+            <n-button size="tiny" quaternary @click="pwa.updateReady.value = false">稍后</n-button>
+          </div>
+        </Transition>
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -198,6 +209,30 @@ function openHelp(tab = 'rules') {
   background: var(--bp-ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--bp-ok) 25%, transparent);
 }
+.offline {
+  font-size: 11px;
+  color: var(--bp-muted);
+  border: 1px solid var(--bp-line-strong);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.update {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--bp-panel);
+  border: 1px solid var(--bp-line);
+  box-shadow: var(--bp-shadow-lg);
+  font-size: 13px;
+}
 .acts {
   display: flex;
   gap: 4px;
@@ -216,6 +251,7 @@ function openHelp(tab = 'rules') {
 }
 @media (max-width: 720px) {
   .tag,
+  .offline,
   .privacy {
     display: none;
   }

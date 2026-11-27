@@ -7,11 +7,11 @@
  * - 原始 File / ArrayBuffer / PDFDocumentProxy 不进入本文件中的任何可序列化类型。
  */
 
-export type DocumentRole = 'main' | 'supplement'
+export type DocumentRole = 'main' | 'supplement' | 'source'
 export type Severity = 'high' | 'medium' | 'info'
 export type Confidence = 'high' | 'medium' | 'low'
 
-export type FindingSource = 'metadata' | 'text' | 'link' | 'annotation' | 'filename' | 'attachment' | 'image' | 'font' | 'revision'
+export type FindingSource = 'metadata' | 'text' | 'link' | 'annotation' | 'filename' | 'attachment' | 'image' | 'font' | 'revision' | 'source'
 
 export type FindingCategory =
   | 'metadata'
@@ -34,6 +34,10 @@ export type FindingCategory =
   | 'fontName'
   | 'revision'
   | 'template'
+  | 'sourceAuthor'
+  | 'sourceComment'
+  | 'sourceArtifact'
+  | 'sourceMetadata'
 
 /** 版面区域：决定同一命中的优先级。 */
 export type Zone =
@@ -165,6 +169,8 @@ export interface PageFacts {
   extractionStatus: 'completed' | 'failed'
   extractionError?: string
   twoColumn: boolean
+  /** 文字来自本地 OCR（扫描页 / 图片页） */
+  ocr?: boolean
 }
 
 export interface AttachmentFact {
@@ -185,6 +191,7 @@ export type CoverageCapability =
   | 'images'
   | 'hiddenContent'
   | 'supplements'
+  | 'sourceFiles'
 
 export interface CoverageEntry {
   documentId: string | null
@@ -228,6 +235,33 @@ export interface BinaryFacts {
   /** 版本数（增量保存次数 + 1）；线性化文件的首页段不计 */
   revisionCount: number
   oldRevisions: RevisionFact[]
+}
+
+/** 源文件包中的一个文件 */
+export type SourceFileKind = 'tex' | 'bib' | 'text' | 'image' | 'office' | 'pdf' | 'archive' | 'vcs' | 'build' | 'junk' | 'binary'
+
+export interface SourceFileFact {
+  path: string
+  size: number
+  kind: SourceFileKind
+}
+
+/**
+ * 源文件包（LaTeX 工程 / 代码 zip / 单个 .tex）。文本内容只在内存中，供规则扫描，不进入报告。
+ */
+export interface SourceFacts {
+  name: string
+  byteSize: number
+  files: SourceFileFact[]
+  /** 已解码的文本文件（tex / bib / 代码 / 说明 / 构建日志） */
+  texts: Array<{ path: string; kind: SourceFileKind; text: string }>
+  /** 包内图片与 Office 文档的元数据 */
+  meta: Array<{ path: string; kind: 'image' | 'office'; fields: Record<string, string>; gps: boolean }>
+  /** \author{} 中解析出的姓名（只用于继续查找，不对外发送） */
+  authorNames: string[]
+  /** 版本库目录（.git / .svn / .hg） */
+  vcsDirs: string[]
+  warnings: string[]
 }
 
 export interface DocumentFacts {
@@ -365,6 +399,8 @@ export interface ScanOptions {
    * 只在内存中，不写入报告。
    */
   knownNames?: Array<{ raw: string; tokens: string[]; source: string }>
+  /** 可选的源文件包（LaTeX / zip） */
+  source?: SourceFacts | null
 }
 
 export interface RuleRunStatus {
@@ -387,6 +423,8 @@ export interface ScanResult {
   rules: RuleRunStatus[]
   /** 本次扫描使用的自定义词条数（词条本身不写入报告） */
   userTermCount: number
+  /** 源文件包摘要（不含文件内容）；没有时为 null */
+  source: { name: string; byteSize: number; fileCount: number; textCount: number; warnings: string[] } | null
 }
 
 export interface ReviewDecision {

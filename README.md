@@ -27,6 +27,10 @@
 | R19 | 字体名中的作者名、自定义词或机构词 |
 | R20 | 增量保存的旧版本：残留的旧元数据（如改稿前的作者名）与保存版本数 |
 | R21 | 会场审稿模板标记（CVPR、ICLR、CCS 等预设） |
+| R22 | 源文件包：`\author`、`\thanks`、`\affiliation`、`pdfauthor`、终稿开关（如 `[final]{neurips_2026}`） |
+| R23 | 源文件包：LaTeX 注释、`\iffalse` / `comment` 块，以及代码 / 说明文件里的姓名、邮箱、本机路径、个人仓库、版权人 |
+| R24 | 源文件包：`.git` 等版本库目录、编译日志 / synctex 里的本机路径、临时文件 |
+| R25 | 源文件包：图片 EXIF / PNG 文本、Office 文档属性、含姓名的文件名 |
 
 此外会报告**覆盖情况**：哪些页文字过少（疑似扫描 / 图片页）、哪些内容没被检查。
 
@@ -35,6 +39,12 @@
 - **清理版 PDF**：在本机用 pdf-lib 删除元数据 / XMP、审阅批注、嵌入附件、图片的 EXIF / IPTC / XMP（可选：外部链接目标、标题），把增量保存合并为单一版本并回收残留对象；随后用相同设置复检，告诉你哪些问题已消除、哪些仍要改源文件。正文内容不改动。
 - **修复前后对比**：在结果页“上传新版本”或“替换并重新检查”后，自动与上一版对比，分为已修复 / 仍存在 / 新增；忽略类复核决定沿用，标记为“已修改”却仍存在的会恢复为待处理。
 - **人工核对清单**：匿名仓库、图片中的文字、补充材料、第三人称自引、预印本政策等规则查不到的事项，按会场预设调整说明，勾选情况可写入报告。
+
+## 源文件、扫描页与离线使用
+
+- **源文件包**：可选导入 LaTeX 工程或代码的 `.zip`（或单个 `.tex`）。在内存中解压（最多 50 MB / 解压后 300 MB / 5000 个文件），检查 PDF 里看不到、但随 arXiv 源码或补充材料公开的内容；`\author` 中的姓名也会用于检查 PDF 正文。
+- **本地 OCR**：可选开启。只识别文字缺失或乱码的页面（扫描页、图片页），一次最多 40 页；识别组件与英文 / 简体中文语言包都从本站加载，在浏览器里完成。OCR 得到的命中会注明“可能有识别错误”。
+- **离线安装**：构建产物带 service worker 与清单，可以安装到桌面并断网使用。service worker 只缓存本站静态资源；OCR 组件在第一次使用时缓存。
 
 ## 会场预设
 
@@ -64,7 +74,9 @@ npm install
 npm run dev
 ```
 
-`npm install` 会通过 postinstall 把 pdf.js 的 worker、cmaps、字体和 wasm 复制到 `public/pdfjs/`（已在 .gitignore 中），保证运行时只读同源资源。
+`npm install` 会通过 postinstall 把 pdf.js 的 cmaps、字体、wasm 复制到 `public/pdfjs/`，把 OCR 的 worker、内核和英文 / 简体中文语言包（约 16 MB）复制到 `public/ocr/`（都已在 .gitignore 中），保证运行时只读同源资源。
+
+PWA 图标由 `node scripts/make-icons.mjs` 生成（已提交在 `public/icons/`）；`dist/sw.js` 在构建时生成。
 
 构建出的 `dist/` 使用相对路径（`base: './'`），可放到任意静态托管或本地目录。
 
@@ -126,7 +138,8 @@ src/
   presets/       会场预设
   report/        报告构建（脱敏）、HTML 渲染（全转义 + CSP）、下载
   clean/         清理版 PDF（pdf-lib，按需加载）
-  app/           会话状态、主题、修复前后对比、人工核对清单
+  ocr/           本地 OCR（tesseract.js，按需加载）
+  app/           会话状态、主题、修复前后对比、人工核对清单、PWA 注册
   components/    Vue + Naive UI 界面
 tests/           Vitest
 e2e/             Playwright

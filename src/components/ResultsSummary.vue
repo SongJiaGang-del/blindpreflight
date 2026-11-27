@@ -5,7 +5,7 @@ import { CAPABILITY_LABEL, CATEGORY_LABEL, COVERAGE_LABEL, SEVERITY_LABEL, isDis
 import { useSession } from '@/app/session'
 
 const props = defineProps<{ result: ScanResult; docLabels: Record<string, string> }>()
-const emit = defineEmits<{ severity: [sev: Severity]; category: [cat: FindingCategory]; page: [docId: string, page: number] }>()
+const emit = defineEmits<{ severity: [sev: Severity]; category: [cat: FindingCategory]; page: [docId: string, page: number]; ocr: [] }>()
 const s = useSession()
 
 const SEV_RANK: Record<Severity, number> = { high: 3, medium: 2, info: 1 }
@@ -87,6 +87,12 @@ const gaps = computed(() =>
       pages: c.pageNumbers,
     })),
 )
+/** 有文字缺失 / 乱码的页、但这次没有做 OCR */
+const ocrSuggest = computed(() => {
+  const weak = props.result.documents.reduce((n, d) => n + d.pages.filter((p) => p.textQuality !== 'ok' && !p.ocr).length, 0)
+  const done = props.result.documents.some((d) => d.pages.some((p) => p.ocr))
+  return weak && !done ? weak : 0
+})
 const disabledRules = computed(() => props.result.rules.filter((r) => r.status === 'disabled'))
 const warnings = computed(() =>
   props.result.documents.flatMap((d) => d.warnings.map((w, i) => ({ key: `${d.id}-${i}`, doc: props.docLabels[d.id] ?? d.id, text: w }))),
@@ -102,7 +108,7 @@ const warnings = computed(() =>
           <div class="v-title">匿名性自检意见</div>
           <p :data-testid="verdict.tone === 'ok' ? 'all-clear' : undefined">{{ verdict.text }}</p>
           <div class="meta">
-            {{ result.preset.venue }}{{ result.preset.year ? ` ${result.preset.year}` : '' }} 预设 · {{ result.documents.length }} 个文件 · {{ pages }} 页 ·
+            {{ result.preset.venue }}{{ result.preset.year ? ` ${result.preset.year}` : '' }} 预设 · {{ result.documents.length }} 个 PDF · {{ pages }} 页<template v-if="result.source"> · 源文件包 {{ result.source.fileCount }} 个文件</template> ·
             规则集 {{ result.rulesetVersion }}<template v-if="result.userTermCount"> · {{ result.userTermCount }} 个自定义词</template>
           </div>
         </div>
@@ -183,6 +189,11 @@ const warnings = computed(() =>
     </div>
 
     <div v-for="w in warnings" :key="w.key" class="warn">{{ w.doc }}：{{ w.text }}</div>
+
+    <div v-if="ocrSuggest" class="ocr-tip" data-testid="ocr-suggest">
+      有 {{ ocrSuggest }} 页文字缺失或乱码（可能是扫描页或图片），这些页上的姓名、机构没有被检查。
+      <button type="button" class="link" :disabled="s.busy.value" @click="emit('ocr')">开启本地 OCR 并重新检查</button>
+    </div>
 
     <details class="coverage" data-testid="coverage">
       <summary>覆盖范围：{{ gaps.length ? `${gaps.length} 项未完全检查` : '所有支持的项目均已检查' }}</summary>
@@ -530,6 +541,22 @@ const warnings = computed(() =>
   color: var(--bp-medium-ink);
   border-radius: 8px;
   padding: 8px 12px;
+}
+.ocr-tip {
+  font-size: 13px;
+  background: var(--bp-info-soft);
+  color: var(--bp-ink-2);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--bp-accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 .coverage summary {
   cursor: pointer;
