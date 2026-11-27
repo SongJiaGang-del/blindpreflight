@@ -7,21 +7,25 @@ import {
   NMessageProvider,
   NTooltip,
   darkTheme,
+  dateEnUS,
   dateZhCN,
+  enUS,
   zhCN,
   type GlobalThemeOverrides,
 } from 'naive-ui'
 import { useSession } from '@/app/session'
 import { useTheme } from '@/app/theme'
 import { usePwa } from '@/app/pwa'
+import { useI18n } from '@/i18n'
 import ImportPanel from '@/components/ImportPanel.vue'
 import ResultsView from '@/components/ResultsView.vue'
 import HelpDrawer from '@/components/HelpDrawer.vue'
 import ClearAllButton from '@/components/ClearAllButton.vue'
 
 const s = useSession()
-const t = useTheme()
+const th = useTheme()
 const pwa = usePwa()
+const { t, locale, setLocale } = useI18n()
 const showHelp = ref(false)
 const helpTab = ref('rules')
 
@@ -76,9 +80,11 @@ const DARK: GlobalThemeOverrides = {
   },
 }
 
-const naiveTheme = computed(() => (t.isDark.value ? darkTheme : null))
-const overrides = computed(() => (t.isDark.value ? DARK : LIGHT))
-const themeLabel = computed(() => ({ auto: '主题：跟随系统', light: '主题：亮色', dark: '主题：暗色' })[t.mode.value])
+const naiveTheme = computed(() => (th.isDark.value ? darkTheme : null))
+const overrides = computed(() => (th.isDark.value ? DARK : LIGHT))
+const themeLabel = computed(() => ({ auto: t('app.themeAuto'), light: t('app.themeLight'), dark: t('app.themeDark') })[th.mode.value])
+const naiveLocale = computed(() => (locale.value === 'zh' ? zhCN : enUS))
+const naiveDateLocale = computed(() => (locale.value === 'zh' ? dateZhCN : dateEnUS))
 
 function openHelp(tab = 'rules') {
   helpTab.value = tab
@@ -87,11 +93,11 @@ function openHelp(tab = 'rules') {
 </script>
 
 <template>
-  <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme="naiveTheme" :theme-overrides="overrides">
+  <n-config-provider :locale="naiveLocale" :date-locale="naiveDateLocale" :theme="naiveTheme" :theme-overrides="overrides">
     <n-message-provider>
       <n-dialog-provider>
         <header class="top">
-          <button class="brand" type="button" aria-label="BlindPreflight 首页" @click="s.state.view = 'import'">
+          <button class="brand" type="button" :aria-label="t('app.home')" @click="s.state.view = 'import'">
             <span class="logo" aria-hidden="true">
               <svg viewBox="0 0 32 32" width="30" height="30">
                 <rect x="1.5" y="1.5" width="29" height="29" rx="7" fill="currentColor" />
@@ -101,22 +107,22 @@ function openHelp(tab = 'rules') {
               </svg>
             </span>
             <span class="name">BlindPreflight</span>
-            <span class="tag">双盲投稿匿名性预检</span>
+            <span class="tag">{{ t('app.tag') }}</span>
           </button>
           <div class="privacy" data-testid="privacy-note">
-            <span class="dot" aria-hidden="true" />本地处理 · 不上传 · 不调用云端 AI
+            <span class="dot" aria-hidden="true" />{{ t('app.privacy') }}
           </div>
-          <span v-if="pwa.offlineReady.value" class="offline" data-testid="offline-ready" title="应用已缓存在本机，断网也能打开">可离线使用</span>
-          <n-button v-if="pwa.canInstall.value" size="small" secondary data-testid="install-app" @click="pwa.promptInstall()">安装到桌面</n-button>
+          <span v-if="pwa.offlineReady.value" class="offline" data-testid="offline-ready" :title="t('app.offlineTip')">{{ t('app.offline') }}</span>
+          <n-button v-if="pwa.canInstall.value" size="small" secondary data-testid="install-app" @click="pwa.promptInstall()">{{ t('app.install') }}</n-button>
           <div class="acts">
             <n-tooltip>
               <template #trigger>
-                <n-button size="small" quaternary :aria-label="themeLabel" data-testid="theme-toggle" @click="t.cycle()">
-                  <svg v-if="t.mode.value === 'auto'" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                <n-button size="small" quaternary :aria-label="themeLabel" data-testid="theme-toggle" @click="th.cycle()">
+                  <svg v-if="th.mode.value === 'auto'" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
                     <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6" />
                     <path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor" />
                   </svg>
-                  <svg v-else-if="t.mode.value === 'light'" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                  <svg v-else-if="th.mode.value === 'light'" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
                     <circle cx="10" cy="10" r="3.6" fill="none" stroke="currentColor" stroke-width="1.6" />
                     <path d="M10 2v2.2M10 15.8V18M2 10h2.2M15.8 10H18M4.3 4.3l1.6 1.6M14.1 14.1l1.6 1.6M4.3 15.7l1.6-1.6M14.1 5.9l1.6-1.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
                   </svg>
@@ -125,9 +131,20 @@ function openHelp(tab = 'rules') {
                   </svg>
                 </n-button>
               </template>
-              {{ themeLabel }}（点击切换）
+              {{ t('app.themeTip', { label: themeLabel }) }}
             </n-tooltip>
-            <n-button size="small" quaternary data-testid="open-help" @click="openHelp()">帮助</n-button>
+            <n-button
+              size="small"
+              quaternary
+              class="lang"
+              :title="t('app.lang')"
+              :aria-label="t('app.lang')"
+              data-testid="lang-toggle"
+              @click="setLocale(locale === 'zh' ? 'en' : 'zh')"
+            >
+              {{ t('app.langShort') }}
+            </n-button>
+            <n-button size="small" quaternary data-testid="open-help" @click="openHelp()">{{ t('app.help') }}</n-button>
             <ClearAllButton />
           </div>
         </header>
@@ -140,9 +157,9 @@ function openHelp(tab = 'rules') {
         <HelpDrawer v-model:show="showHelp" v-model:tab="helpTab" />
         <Transition name="page">
           <div v-if="pwa.updateReady.value" class="update" role="status">
-            <span>新版本已下载。刷新后生效（会清空当前的文件与检查结果）。</span>
-            <n-button size="tiny" type="primary" @click="pwa.applyUpdate()">立即刷新</n-button>
-            <n-button size="tiny" quaternary @click="pwa.updateReady.value = false">稍后</n-button>
+            <span>{{ t('app.update') }}</span>
+            <n-button size="tiny" type="primary" @click="pwa.applyUpdate()">{{ t('app.reloadNow') }}</n-button>
+            <n-button size="tiny" quaternary @click="pwa.updateReady.value = false">{{ t('app.later') }}</n-button>
           </div>
         </Transition>
       </n-dialog-provider>
@@ -208,6 +225,10 @@ function openHelp(tab = 'rules') {
   border-radius: 50%;
   background: var(--bp-ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--bp-ok) 25%, transparent);
+}
+.lang {
+  font-weight: 700;
+  min-width: 34px;
 }
 .offline {
   font-size: 11px;

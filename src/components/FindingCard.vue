@@ -2,11 +2,11 @@
 import { computed } from 'vue'
 import { NButton, NSelect, NTag, useDialog, useMessage } from 'naive-ui'
 import type { Finding, ReviewStatus } from '@/domain/types'
-import { CATEGORY_LABEL, CONFIDENCE_LABEL, REVIEW_LABEL, REVIEW_ORDER, SEVERITY_LABEL, SOURCE_LABEL, isDismissed } from '@/domain/labels'
-import { ZONE_LABEL } from '@/rules/core'
+import { CATEGORY_LABEL, CONFIDENCE_LABEL, REVIEW_LABEL, REVIEW_ORDER, SEVERITY_LABEL, SOURCE_LABEL, ZONE_LABEL, formatField, isDismissed } from '@/domain/labels'
 import { ruleTitle } from '@/rules/engine'
 import { openExternal, safeExternalUrl, visibleText } from '@/utils/safe-text'
 import { useSession } from '@/app/session'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{ finding: Finding; docLabel: string; selected: boolean }>()
 const emit = defineEmits<{ select: [] }>()
@@ -14,6 +14,7 @@ const emit = defineEmits<{ select: [] }>()
 const s = useSession()
 const dialog = useDialog()
 const message = useMessage()
+const { t, tx, locale } = useI18n()
 
 const status = computed(() => s.statusOf(props.finding.id))
 const cmpTag = computed(() => s.compareTag.value.get(props.finding.id) ?? null)
@@ -23,6 +24,7 @@ const dismissed = computed(() => isDismissed(status.value))
 const parts = computed(() => {
   const f = props.finding
   const m = f.matchInSnippet
+  if (f.snippetText) return { before: visibleText(tx(f.snippetText)), hit: '', after: '' }
   if (!m) return { before: visibleText(f.snippet), hit: '', after: '' }
   return {
     before: visibleText(f.snippet.slice(0, m[0])),
@@ -35,18 +37,25 @@ const pages = computed(() => [...new Set(props.finding.occurrences.map((o) => o.
 const where = computed(() => {
   const f = props.finding
   const bits = [props.docLabel]
+  const field = formatField(f.field, locale.value)
   if (f.documentRole === 'source') {
-    if (f.field) bits.push(f.field)
+    if (field) bits.push(field)
     return bits.join(' · ')
   }
-  if (f.page == null) bits.push('文档级')
-  else bits.push(pages.value.length > 1 ? `第 ${pages.value.slice(0, 6).join('、')}${pages.value.length > 6 ? '…' : ''} 页` : `第 ${f.page} 页`)
-  if (f.zone) bits.push(ZONE_LABEL[f.zone])
-  if (f.field) bits.push(f.field)
+  if (f.page == null) bits.push(t('card.docLevel'))
+  else
+    bits.push(
+      pages.value.length > 1
+        ? t('card.pages', { pages: `${pages.value.slice(0, 6).join(locale.value === 'zh' ? '、' : ', ')}${pages.value.length > 6 ? '…' : ''}` })
+        : t('card.page', { page: f.page }),
+    )
+  if (f.zone) bits.push(tx(ZONE_LABEL[f.zone]))
+  if (field) bits.push(field)
   return bits.join(' · ')
 })
 
-const reviewOptions = REVIEW_ORDER.map((v) => ({ value: v, label: REVIEW_LABEL[v] }))
+const reviewOptions = computed(() => REVIEW_ORDER.map((v) => ({ value: v, label: tx(REVIEW_LABEL[v]) })))
+const titles = computed(() => props.finding.ruleIds.map((id) => tx(ruleTitle(id))).join(' · '))
 const linkUrl = computed(() => safeExternalUrl(props.finding.linkTarget))
 
 function onStatus(v: ReviewStatus) {
@@ -57,10 +66,10 @@ function confirmOpen() {
   const url = linkUrl.value
   if (!url) return
   dialog.warning({
-    title: '打开外部链接？',
-    content: `将在新标签页中打开：\n${visibleText(url)}\n\n访问该网站会向对方暴露你的 IP 地址等信息；如果这是你自己的主页或仓库，访问记录可能被关联到审稿时间。BlindPreflight 本身不会访问任何链接。`,
-    positiveText: '仍然打开',
-    negativeText: '取消',
+    title: t('card.openTitle'),
+    content: t('card.openContent', { url: visibleText(url) }),
+    positiveText: t('card.openAnyway'),
+    negativeText: t('common.cancel'),
     style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' },
     onPositiveClick: () => {
       openExternal(url)
@@ -71,15 +80,15 @@ function confirmOpen() {
 async function copyEvidence() {
   const f = props.finding
   const lines = [
-    `[${f.ruleIds.join('+')}] ${SEVERITY_LABEL[f.severity]} · ${where.value}`,
-    f.snippet,
-    ...(f.linkTarget ? [`链接目标：${f.linkTarget}`] : []),
+    `[${f.ruleIds.join('+')}] ${tx(SEVERITY_LABEL[f.severity])} · ${where.value}`,
+    f.snippetText ? tx(f.snippetText) : f.snippet,
+    ...(f.linkTarget ? [t('card.linkTargetCopy', { url: f.linkTarget })] : []),
   ]
   try {
     await navigator.clipboard.writeText(lines.join('\n'))
-    message.success('已复制到剪贴板')
+    message.success(t('card.copied'))
   } catch {
-    message.warning('无法访问剪贴板，请手动选择文本复制')
+    message.warning(t('card.copyFailed'))
   }
 }
 </script>
@@ -91,38 +100,38 @@ async function copyEvidence() {
     :data-testid="`finding-${finding.ruleId}`"
     :data-finding-id="finding.id"
     tabindex="0"
-    :aria-label="`${SEVERITY_LABEL[finding.severity]}：${ruleTitle(finding.ruleId)}，${where}`"
+    :aria-label="`${tx(SEVERITY_LABEL[finding.severity])}: ${tx(ruleTitle(finding.ruleId))}, ${where}`"
     @click="emit('select')"
     @keydown.enter.self="emit('select')"
   >
     <header class="head">
-      <span class="sev">{{ SEVERITY_LABEL[finding.severity] }}</span>
-      <span class="title">{{ finding.ruleIds.map(ruleTitle).join(' · ') }}</span>
-      <n-tag size="tiny" :bordered="false">{{ CATEGORY_LABEL[finding.category] }}</n-tag>
-      <n-tag v-if="finding.matchedUserTerm" size="tiny" :bordered="false" type="info">命中自定义词</n-tag>
-      <span v-if="cmpTag === 'added'" class="cmp added" data-testid="tag-added">新增</span>
-      <span v-else-if="reopened" class="cmp reopened">标记已改，但仍存在</span>
-      <span v-else-if="cmpTag === 'remaining'" class="cmp remaining">仍存在</span>
+      <span class="sev">{{ tx(SEVERITY_LABEL[finding.severity]) }}</span>
+      <span class="title">{{ titles }}</span>
+      <n-tag size="tiny" :bordered="false">{{ tx(CATEGORY_LABEL[finding.category]) }}</n-tag>
+      <n-tag v-if="finding.matchedUserTerm" size="tiny" :bordered="false" type="info">{{ t('card.matchedTerm') }}</n-tag>
+      <span v-if="cmpTag === 'added'" class="cmp added" data-testid="tag-added">{{ t('card.added') }}</span>
+      <span v-else-if="reopened" class="cmp reopened">{{ t('card.reopened') }}</span>
+      <span v-else-if="cmpTag === 'remaining'" class="cmp remaining">{{ t('card.remaining') }}</span>
       <span class="ids">{{ finding.ruleIds.join('+') }}</span>
     </header>
-    <div class="where">{{ where }} · {{ SOURCE_LABEL[finding.source] }} · 置信度{{ CONFIDENCE_LABEL[finding.confidence] }}</div>
+    <div class="where">{{ where }} · {{ tx(SOURCE_LABEL[finding.source]) }} · {{ t('card.confidence', { c: tx(CONFIDENCE_LABEL[finding.confidence]) }) }}</div>
 
     <blockquote class="snippet" data-testid="finding-snippet">{{ parts.before }}<mark v-if="parts.hit">{{ parts.hit }}</mark>{{ parts.after }}</blockquote>
 
     <div v-if="finding.linkTarget" class="link">
-      <span class="muted">真实链接：</span>
+      <span class="muted">{{ t('card.realLink') }}</span>
       <code>{{ visibleText(finding.linkTarget) }}</code>
       <template v-if="finding.visibleText">
-        <span class="muted">；页面上显示为：</span><code>{{ visibleText(finding.visibleText) }}</code>
+        <span class="muted">{{ t('card.shownAs') }}</span><code>{{ visibleText(finding.visibleText) }}</code>
       </template>
     </div>
 
     <ul class="reasons">
-      <li v-for="(r, i) in finding.reasons" :key="i">{{ visibleText(r) }}</li>
+      <li v-for="(r, i) in finding.reasons" :key="i">{{ visibleText(tx(r)) }}</li>
     </ul>
-    <div class="suggest"><strong>怎么改：</strong>{{ finding.suggestion }}</div>
+    <div class="suggest"><strong>{{ t('card.howToFix') }}</strong>{{ tx(finding.suggestion) }}</div>
     <div v-if="finding.policyRefs.length" class="refs">
-      依据：<span v-for="(p, i) in finding.policyRefs" :key="i">{{ p.label }}<template v-if="p.note">（{{ p.note }}）</template><template v-if="i < finding.policyRefs.length - 1">；</template></span>
+      {{ t('card.basis') }}<span v-for="(p, i) in finding.policyRefs" :key="i">{{ p.label }}<template v-if="tx(p.note)"> ({{ tx(p.note) }})</template><template v-if="i < finding.policyRefs.length - 1">; </template></span>
     </div>
 
     <footer class="foot" @click.stop>
@@ -132,12 +141,12 @@ async function copyEvidence() {
         :value="status"
         :options="reviewOptions"
         :consistent-menu-width="false"
-        aria-label="复核状态"
+        :aria-label="t('card.review')"
         data-testid="review-select"
         @update:value="onStatus"
       />
-      <n-button size="small" quaternary @click="copyEvidence">复制证据</n-button>
-      <n-button v-if="linkUrl" size="small" quaternary @click="confirmOpen">打开链接…</n-button>
+      <n-button size="small" quaternary @click="copyEvidence">{{ t('card.copy') }}</n-button>
+      <n-button v-if="linkUrl" size="small" quaternary @click="confirmOpen">{{ t('card.openLink') }}</n-button>
     </footer>
   </article>
 </template>

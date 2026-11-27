@@ -6,6 +6,7 @@ import { normalizeText } from '@/normalize/unicode'
 import { type FindingDraft, type RuleContext, ZONE_LABEL, scanDoc } from './core'
 import { identityTokens } from './identity'
 import { ARXIV_STAMP } from './patterns'
+import { L, LIST_SEP, type Text, join } from '@/domain/text'
 
 /** 匿名投稿模板里常见、本身不泄露身份的页眉页脚 */
 const BENIGN =
@@ -49,22 +50,40 @@ export function ruleHeaderFooter(doc: DocumentFacts, ctx: RuleContext): FindingD
     const stamp = VERSION_STAMP.test(text)
     const benign = BENIGN.test(g.key) || (title.length > 8 && (g.key === title || title.includes(g.key)))
     let severity: Severity | null = null
-    const reasons: string[] = []
-    let suggestion = '在 LaTeX 中检查 \\fancyhead / \\fancyfoot、\\thanks 与模板选项（如 [final]、[preprint]）。'
+    const reasons: Text[] = []
+    const checkTex = L(
+      '在 LaTeX 中检查 \\fancyhead / \\fancyfoot、\\thanks 与模板选项（如 [final]、[preprint]）。',
+      'In LaTeX check \\fancyhead / \\fancyfoot, \\thanks and template options (e.g. [final], [preprint]).',
+    )
+    let suggestion: Text = checkTex
     if (tokens.length) {
       severity = 'high'
-      reasons.push(`${ZONE_LABEL[first.line.zone]}中${tokens.join('、')}。`)
-      suggestion = '把页眉页脚改回会场匿名模板的默认内容。' + suggestion
+      const z = ZONE_LABEL[first.line.zone]
+      reasons.push(L(`${z.zh}中${join(tokens, LIST_SEP).zh}。`, `The ${z.en} ${join(tokens, LIST_SEP).en}.`))
+      suggestion = join([L('把页眉页脚改回会场匿名模板的默认内容。', 'Restore the venue’s anonymous template header / footer. '), checkTex])
     } else if (stamp) {
       severity = 'medium'
-      reasons.push('页眉页脚含有预印本 / 终稿 / 版权声明，说明使用的不是匿名投稿模板。')
-      suggestion = '切换到会场模板的匿名投稿选项（例如去掉 [final]、[preprint]、camera-ready 选项）。'
+      reasons.push(
+        L(
+          '页眉页脚含有预印本 / 终稿 / 版权声明，说明使用的不是匿名投稿模板。',
+          'The header / footer has a preprint / camera-ready / copyright notice, so this is not the anonymous submission template.',
+        ),
+      )
+      suggestion = L(
+        '切换到会场模板的匿名投稿选项（例如去掉 [final]、[preprint]、camera-ready 选项）。',
+        'Switch to the template’s anonymous submission option (e.g. drop [final], [preprint] or camera-ready options).',
+      )
     } else if (repeated && !benign) {
       severity = 'info'
-      reasons.push('这段文字在多数页面的页眉/页脚重复出现，请确认没有课题组、项目或个人信息。')
+      reasons.push(
+        L(
+          '这段文字在多数页面的页眉/页脚重复出现，请确认没有课题组、项目或个人信息。',
+          'This text repeats in the header / footer of most pages; make sure it has no group, project or personal info.',
+        ),
+      )
     }
     if (!severity) continue
-    if (repeated) reasons.push(`出现在 ${pageCount} / ${pages} 页。`)
+    if (repeated) reasons.push(L(`出现在 ${pageCount} / ${pages} 页。`, `Appears on ${pageCount} / ${pages} pages.`))
     out.push({
       ruleId: 'R11',
       category: 'headerFooter',
@@ -92,8 +111,11 @@ export function ruleArxivStamp(doc: DocumentFacts, ctx: RuleContext): FindingDra
     severity: 'medium' as const,
     confidence: 'high' as const,
     text: hit,
-    reasons: ['PDF 中带有 arXiv 编号戳：审稿人可以直接查到同名预印本及其作者。'],
-    suggestion: '提交会场模板编译的版本，而不是从 arXiv 下载的 PDF；同时确认会场对预印本的政策。',
+    reasons: [L('PDF 中带有 arXiv 编号戳：审稿人可以直接查到同名预印本及其作者。', 'The PDF carries an arXiv stamp: reviewers can find the preprint and its authors directly.')],
+    suggestion: L(
+      '提交会场模板编译的版本，而不是从 arXiv 下载的 PDF；同时确认会场对预印本的政策。',
+      'Submit the version compiled with the venue template, not the PDF downloaded from arXiv, and check the venue’s preprint policy.',
+    ),
     key: 'arxiv',
   }))
 }

@@ -9,8 +9,10 @@ import { computed, markRaw, reactive, shallowRef } from 'vue'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { DocumentFacts, ReviewDecision, ReviewStatus, ScanOptions, ScanResult } from '@/domain/types'
 import { LIMITS } from '@/domain/limits'
-import { PreflightError, isCancelled } from '@/domain/errors'
-import { SCANNED_WARNING, extractDocument } from '@/parsers/pdf/extract'
+import { ERROR_MESSAGES, PreflightError, isCancelled } from '@/domain/errors'
+import { IMG_TEXT_NOTE, SCANNED_WARNING, extractDocument } from '@/parsers/pdf/extract'
+import { L, type Text, join } from '@/domain/text'
+import { DOC_LABEL } from '@/domain/labels'
 import { parseSourceArchive } from '@/parsers/source/archive'
 import { OCR_MAX_PAGES, type OcrLang, createOcrSession } from '@/ocr/ocr'
 import { assignZones } from '@/normalize/zones'
@@ -68,7 +70,7 @@ function applyCustom(): void {
 }
 applyCustom()
 
-export const SLOT_LABEL: Record<SlotId, string> = { main: '主稿', 'supp-1': '补充材料 1', 'supp-2': '补充材料 2' }
+export const SLOT_LABEL: Record<SlotId, Text> = { main: DOC_LABEL.main!, 'supp-1': DOC_LABEL['supp-1']!, 'supp-2': DOC_LABEL['supp-2']! }
 
 const initialPrefs = loadPrefs()
 const state = reactive({
@@ -83,9 +85,9 @@ const state = reactive({
   sourceFile: null as File | null,
   phase: 'idle' as Phase,
   progress: { slot: 'main' as SlotId, done: 0, total: 0, docIndex: 0, docCount: 0 },
-  error: null as string | null,
+  error: null as Text | null,
   /** 选择文件时的即时校验错误 */
-  selectionError: null as string | null,
+  selectionError: null as Text | null,
   decisions: new Map<string, ReviewDecision>(),
   selectedFindingId: null as string | null,
   /** 人工核对清单中已勾选的条目 */
@@ -139,8 +141,8 @@ export function isSourceFile(f: File): boolean {
 function setSourceFile(file: File | null): void {
   state.sourceFile = file
   state.selectionError = null
-  if (file && !isSourceFile(file)) state.selectionError = '源文件只支持 .zip 压缩包，或单个 .tex / .bib 文件。'
-  else if (file && file.size > 50 * 1024 * 1024) state.selectionError = '源文件包超过 50 MB。请去掉数据集、模型权重等大文件后重试。'
+  if (file && !isSourceFile(file)) state.selectionError = ERROR_MESSAGES.SOURCE_UNREADABLE
+  else if (file && file.size > 50 * 1024 * 1024) state.selectionError = ERROR_MESSAGES.SOURCE_TOO_LARGE
   else checkSelection()
 }
 
@@ -152,7 +154,7 @@ function checkSelection(): void {
       supplements: [state.files['supp-1'], state.files['supp-2']].filter((f): f is File => !!f).map((f) => f.size),
     })
   } catch (err) {
-    state.selectionError = err instanceof PreflightError ? err.message : '文件选择无效。'
+    state.selectionError = err instanceof PreflightError ? err.text : L('文件选择无效。', 'Invalid file selection.')
   }
 }
 
@@ -183,7 +185,7 @@ function setPreset(id: string): void {
 async function start(): Promise<void> {
   const main = state.files.main
   if (!main) {
-    state.selectionError = '请先选择主稿 PDF。'
+    state.selectionError = L('请先选择主稿 PDF。', 'Choose the main paper PDF first.')
     return
   }
   checkSelection()
@@ -261,13 +263,25 @@ async function start(): Promise<void> {
           assignZones(doc.pages)
           doc.warnings = doc.warnings.filter((w) => w !== SCANNED_WARNING)
           const img = doc.coverage.find((c) => c.capability === 'images')
-          if (img) img.reason = img.reason.replace('图片中的文字没有检查（无 OCR）', `已对 ${n} 页扫描 / 图片页做本地 OCR，文字正常的页面里的插图没有识别`)
+          if (img)
+            img.reason = L(
+              img.reason.zh.replace(IMG_TEXT_NOTE.zh, `已对 ${n} 页扫描 / 图片页做本地 OCR，文字正常的页面里的插图没有识别。`),
+              img.reason.en.replace(IMG_TEXT_NOTE.en, `local OCR ran on ${n} scanned / image page(s); figures on normal pages were not read.`),
+            )
           const cov = doc.coverage.find((c) => c.capability === 'text')
-          if (cov) cov.reason += ` 其中 ${n} 页已用本地 OCR 识别${n < weak.filter((w) => w.di === di).length ? '（超过单次上限的页没有识别）' : ''}，识别结果可能有错字。`
+          const capped = n < weak.filter((w) => w.di === di).length
+          if (cov)
+            cov.reason = join([
+              cov.reason,
+              L(
+                ` 其中 ${n} 页已用本地 OCR 识别${capped ? '（超过单次上限的页没有识别）' : ''}，识别结果可能有错字。`,
+                ` ${n} of them were read with local OCR${capped ? ' (pages beyond the per-run limit were skipped)' : ''}; OCR may contain errors.`,
+              ),
+            ])
         }
       } catch (err) {
         if (isCancelled(err)) throw err
-        facts[0]?.warnings.push(err instanceof PreflightError ? err.message : '本地 OCR 未能完成。')
+        facts[0]?.warnings.push(err instanceof PreflightError ? err.text : ERROR_MESSAGES.OCR_FAILED)
       } finally {
         await session?.terminate()
       }
@@ -329,7 +343,7 @@ async function start(): Promise<void> {
       return
     }
     state.phase = 'error'
-    state.error = err instanceof PreflightError ? err.message : '处理过程中出现未知错误。请刷新页面后重试。'
+    state.error = err instanceof PreflightError ? err.text : L('处理过程中出现未知错误。请刷新页面后重试。', 'An unexpected error occurred. Reload the page and try again.')
     if (!(err instanceof PreflightError)) console.error('[BlindPreflight] unexpected error', err instanceof Error ? err.name : typeof err)
   } finally {
     if (controller === ctl) controller = null
@@ -397,7 +411,7 @@ async function loadSamples(kind: 'leaky' | 'fixed'): Promise<void> {
     if (kind === 'fixed' && state.termsText === SAMPLE_TERM) state.termsText = ''
     checkSelection()
   } catch {
-    state.selectionError = '示例文件加载失败。'
+    state.selectionError = L('示例文件加载失败。', 'Could not load the sample files.')
   }
 }
 

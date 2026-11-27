@@ -14,6 +14,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:4173/',
     trace: 'retain-on-failure',
+    // 界面语言按浏览器语言选择；用例断言的是中文文案，英文界面另有专门用例
+    locale: 'zh-CN',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { executablePath } } }],
   webServer: {

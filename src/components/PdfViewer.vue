@@ -13,10 +13,12 @@ import type { BBox, Finding, Severity } from '@/domain/types'
 import { isDismissed } from '@/domain/labels'
 import { ruleTitle } from '@/rules/engine'
 import { useSession } from '@/app/session'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{ finding: Finding | null; findings: Finding[]; docLabels: Record<string, string> }>()
 const emit = defineEmits<{ select: [id: string] }>()
 const s = useSession()
+const { t, tx } = useI18n()
 
 const docId = ref('main')
 const pageNo = ref(1)
@@ -52,9 +54,9 @@ const highlight = computed<BBox[]>(() => {
 const noBoxNote = computed(() => {
   const f = props.finding
   if (!f) return null
-  if (f.page == null) return '这是文档级发现（元数据、文件名、附件、旧版本或未被页面引用的图片），没有页面位置。'
-  if (currentOcc.value && !currentOcc.value.bboxes?.length && currentOcc.value.page === pageNo.value) return '该发现没有精确坐标，请在整页中查找。'
-  if (f.bboxApproximate && highlight.value.length) return '高亮框按字符宽度估算，可能略有偏移。'
+  if (f.page == null) return t('viewer.docLevel')
+  if (currentOcc.value && !currentOcc.value.bboxes?.length && currentOcc.value.page === pageNo.value) return t('viewer.noBox')
+  if (f.bboxApproximate && highlight.value.length) return t('viewer.approx')
   return null
 })
 
@@ -92,7 +94,7 @@ const others = computed(() => {
       if (props.finding?.id === f.id && currentOcc.value === o) return
       const open = isOpen(f)
       o.bboxes.forEach((b, bi) =>
-        out.push({ ...toRect(b, vp, 1), key: `${f.id}-${oi}-${bi}`, id: f.id, sev: f.severity, open, title: ruleTitle(f.ruleId) }),
+        out.push({ ...toRect(b, vp, 1), key: `${f.id}-${oi}-${bi}`, id: f.id, sev: f.severity, open, title: tx(ruleTitle(f.ruleId)) }),
       )
     })
   }
@@ -138,7 +140,7 @@ async function render() {
     page = await pdf.getPage(pageNo.value)
   } catch {
     if (my === seq) {
-      renderError.value = '页面无法渲染。'
+      renderError.value = 'viewer.renderError'
       rendering.value = false
     }
     return
@@ -162,7 +164,7 @@ async function render() {
     await task.promise
   } catch (err) {
     const name = err && typeof err === 'object' && 'name' in err ? String((err as { name: unknown }).name) : ''
-    if (name !== 'RenderingCancelledException' && my === seq) renderError.value = '页面无法渲染。'
+    if (name !== 'RenderingCancelledException' && my === seq) renderError.value = 'viewer.renderError'
   } finally {
     if (my === seq) {
       rendering.value = false
@@ -334,20 +336,20 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="viewer" aria-label="原页预览">
+  <section class="viewer" :aria-label="t('viewer.aria')">
     <div class="toolbar">
       <n-tooltip>
         <template #trigger>
-          <n-button size="small" :type="showThumbs ? 'primary' : 'default'" :secondary="showThumbs" aria-label="显示或隐藏缩略图" @click="showThumbs = !showThumbs">
+          <n-button size="small" :type="showThumbs ? 'primary' : 'default'" :secondary="showThumbs" :aria-label="t('viewer.thumbsToggle')" @click="showThumbs = !showThumbs">
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="4.5" height="5.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" /><rect x="1.5" y="9" width="4.5" height="5.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" /><rect x="8" y="1.5" width="6.5" height="13" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg>
           </n-button>
         </template>
-        缩略图
+        {{ t('viewer.thumbs') }}
       </n-tooltip>
-      <n-select v-if="docOptions.length > 1" v-model:value="docId" size="small" :options="docOptions" class="doc" aria-label="选择文件" />
+      <n-select v-if="docOptions.length > 1" v-model:value="docId" size="small" :options="docOptions" class="doc" :aria-label="t('viewer.chooseFile')" />
       <n-button-group size="small">
-        <n-button :disabled="pageNo <= 1" aria-label="上一页" @click="goto(pageNo - 1)">‹</n-button>
-        <n-button :disabled="pageNo >= pageCount" aria-label="下一页" @click="goto(pageNo + 1)">›</n-button>
+        <n-button :disabled="pageNo <= 1" :aria-label="t('viewer.prev')" @click="goto(pageNo - 1)">‹</n-button>
+        <n-button :disabled="pageNo >= pageCount" :aria-label="t('viewer.next')" @click="goto(pageNo + 1)">›</n-button>
       </n-button-group>
       <n-input-number
         size="small"
@@ -356,27 +358,27 @@ onBeforeUnmount(() => {
         :min="1"
         :max="pageCount || 1"
         :show-button="false"
-        aria-label="页码"
+        :aria-label="t('viewer.pageNo')"
         @update:value="(v: number | null) => v && goto(v)"
       >
         <template #suffix>/ {{ pageCount }}</template>
       </n-input-number>
       <n-button-group size="small">
-        <n-button aria-label="缩小" :disabled="zoom <= 0.5" @click="zoom = Math.max(0.5, +(zoom - 0.25).toFixed(2))">−</n-button>
-        <n-button aria-label="适应宽度" @click="zoom = 1">{{ Math.round(zoom * 100) }}%</n-button>
-        <n-button aria-label="放大" :disabled="zoom >= 3" @click="zoom = Math.min(3, +(zoom + 0.25).toFixed(2))">+</n-button>
+        <n-button :aria-label="t('viewer.zoomOut')" :disabled="zoom <= 0.5" @click="zoom = Math.max(0.5, +(zoom - 0.25).toFixed(2))">−</n-button>
+        <n-button :aria-label="t('viewer.fit')" @click="zoom = 1">{{ Math.round(zoom * 100) }}%</n-button>
+        <n-button :aria-label="t('viewer.zoomIn')" :disabled="zoom >= 3" @click="zoom = Math.min(3, +(zoom + 0.25).toFixed(2))">+</n-button>
       </n-button-group>
-      <n-button size="small" aria-label="旋转 90 度" @click="rotation = (rotation + 90) % 360">⟳</n-button>
+      <n-button size="small" :aria-label="t('viewer.rotate')" @click="rotation = (rotation + 90) % 360">⟳</n-button>
       <n-button-group v-if="occurrences.length > 1" size="small" class="occ">
-        <n-button :disabled="occIndex <= 0" @click="occIndex--">上一处</n-button>
+        <n-button :disabled="occIndex <= 0" @click="occIndex--">{{ t('viewer.prevOcc') }}</n-button>
         <n-button disabled>{{ occIndex + 1 }} / {{ occurrences.length }}</n-button>
-        <n-button :disabled="occIndex >= occurrences.length - 1" @click="occIndex++">下一处</n-button>
+        <n-button :disabled="occIndex >= occurrences.length - 1" @click="occIndex++">{{ t('viewer.nextOcc') }}</n-button>
       </n-button-group>
     </div>
     <div v-if="noBoxNote" class="note">{{ noBoxNote }}</div>
-    <div v-if="renderError" class="note err">{{ renderError }}</div>
+    <div v-if="renderError" class="note err">{{ t(renderError) }}</div>
     <div class="body" :class="{ 'with-thumbs': showThumbs }">
-      <nav v-if="showThumbs" ref="thumbsEl" class="thumbs" aria-label="页面缩略图">
+      <nav v-if="showThumbs" ref="thumbsEl" class="thumbs" :aria-label="t('viewer.thumbNav')">
         <button
           v-for="p in thumbPages"
           :key="`${docId}-${p}`"
@@ -384,7 +386,7 @@ onBeforeUnmount(() => {
           class="thumb"
           :class="{ on: p === pageNo }"
           :data-thumb="p"
-          :aria-label="`第 ${p} 页`"
+          :aria-label="t('viewer.thumbPage', { p })"
           :aria-current="p === pageNo ? 'page' : undefined"
           @click="goto(p)"
         >
@@ -403,8 +405,8 @@ onBeforeUnmount(() => {
             class="other"
             :class="[o.sev, { closed: !o.open }]"
             :style="{ left: `${o.left}px`, top: `${o.top}px`, width: `${o.width}px`, height: `${o.height}px` }"
-            :title="`${o.title}（点击查看）`"
-            :aria-label="`查看发现：${o.title}`"
+            :title="t('viewer.otherTitle', { title: o.title })"
+            :aria-label="t('viewer.otherAria', { title: o.title })"
             data-testid="pdf-other"
             @click="pickOther(o.id)"
           />

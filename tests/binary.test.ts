@@ -77,9 +77,9 @@ describe('R18 图片元数据 / R19 字体名', () => {
     expect(r18.every((f) => f.severity === 'high')).toBe(true)
     const onPage = r18.find((f) => f.page === 1)!
     expect(onPage.snippet).toContain('GPS')
-    expect(onPage.reasons.join()).toMatch(/GPS/)
+    expect(onPage.reasons.map((r) => r.zh).join()).toMatch(/GPS/)
     const orphan = r18.find((f) => f.page == null)!
-    expect(orphan.reasons.join()).toMatch(/没有任何页面引用/)
+    expect(orphan.reasons.map((r) => r.zh).join()).toMatch(/没有任何页面引用/)
     expect(r.facts.coverage.find((c) => c.capability === 'images')?.status).toBe('partial')
   })
 
@@ -124,13 +124,13 @@ describe('R20 增量保存的旧版本', () => {
     expect(r.facts.info.Author ?? '').toBe('')
     expect(r.facts.binary?.revisionCount).toBe(2)
     const r20 = byRule(result, 'R20')
-    const author = r20.find((f) => f.field === '版本 1 · Info.Author')
+    const author = r20.find((f) => f.field === 'rev1:Info.Author')
     expect(author?.severity).toBe('high')
     expect(author?.snippet).toBe('Alex Example')
-    expect(r20.find((f) => f.field === '保存版本')?.severity).toBe('medium')
+    expect(r20.find((f) => f.field === 'revisions')?.severity).toBe('medium')
     // 当前元数据里已经没有作者名，但旧版本里有，正文作者区的姓名仍被 R03 找到
-    expect(byRule(result, 'R03').some((f) => f.snippet.includes('Alex Example') && f.reasons.join().includes('旧版本 1'))).toBe(true)
-    expect(r.facts.coverage.find((c) => c.capability === 'hiddenContent')?.reason).toMatch(/2 个保存版本/)
+    expect(byRule(result, 'R03').some((f) => f.snippet.includes('Alex Example') && f.reasons.map((r) => r.zh).join().includes('旧版本 1'))).toBe(true)
+    expect(r.facts.coverage.find((c) => c.capability === 'hiddenContent')?.reason.zh).toMatch(/2 个保存版本/)
   })
 
   test('清理版只剩一个版本', async () => {

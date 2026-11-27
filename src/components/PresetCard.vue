@@ -6,16 +6,14 @@ import { exportSpecsJson, parseSpecsJson } from '@/presets/custom'
 import { downloadText } from '@/report/download'
 import { useSession } from '@/app/session'
 import PresetEditor from './PresetEditor.vue'
+import { useI18n } from '@/i18n'
+import { presetName } from '@/presets'
 
 const props = defineProps<{ presetId: string; disabled?: boolean }>()
 const emit = defineEmits<{ change: [id: string] }>()
 
-const IMPL: Record<string, { label: string; type: 'success' | 'warning' | 'default' }> = {
-  implemented: { label: '已按条款调整', type: 'success' },
-  partial: { label: '部分实现', type: 'warning' },
-  reference: { label: '仅条款摘要', type: 'default' },
-}
-const VERIFY: Record<string, string> = { verified: '资料已核验', partial: '资料部分核验', unverified: '通用规则' }
+const IMPL: Record<string, 'success' | 'warning' | 'default'> = { implemented: 'success', partial: 'warning', reference: 'default' }
+const { t, tx, locale } = useI18n()
 
 const s = useSession()
 const message = useMessage()
@@ -23,13 +21,13 @@ const message = useMessage()
 const options = computed(() => {
   const all = s.presetList.value
   const label = (p: (typeof all)[number]) =>
-    `${p.venue}${p.year ? ` ${p.year}` : ''}${p.implementationStatus === 'reference' ? '（参考）' : p.implementationStatus === 'partial' ? '（部分）' : ''}`
+    `${presetName(p, locale.value)}${p.implementationStatus === 'reference' ? t('preset.optRef') : p.implementationStatus === 'partial' ? t('preset.optPartial') : ''}`
   const builtin = all.filter((p) => !p.custom).map((p) => ({ value: p.id, label: label(p) }))
-  const custom = all.filter((p) => p.custom).map((p) => ({ value: p.id, label: p.venue }))
+  const custom = all.filter((p) => p.custom).map((p) => ({ value: p.id, label: tx(p.venue) }))
   return custom.length
     ? [
-        { type: 'group', label: '内置预设', key: 'builtin', children: builtin },
-        { type: 'group', label: '自定义预设', key: 'custom', children: custom },
+        { type: 'group', label: t('preset.groupBuiltin'), key: 'builtin', children: builtin },
+        { type: 'group', label: t('preset.groupCustom'), key: 'custom', children: custom },
       ]
     : builtin
 })
@@ -51,7 +49,7 @@ function openEdit() {
 }
 function onSaved(id: string) {
   emit('change', id)
-  message.success('已保存自定义预设')
+  message.success(t('preset.saved'))
 }
 
 const importer = ref<HTMLInputElement | null>(null)
@@ -65,9 +63,9 @@ async function onImport(e: Event) {
     const list = parseSpecsJson(await f.text(), s.ruleIds, s.baseIds)
     if (!list.length) throw new Error('empty')
     s.importCustomPresets(list)
-    message.success(`已导入 ${list.length} 个自定义预设`)
+    message.success(t('preset.imported', { n: list.length }))
   } catch {
-    message.error('无法导入：不是 BlindPreflight 导出的预设文件。')
+    message.error(t('preset.importFailed'))
   }
 }
 function exportAll() {
@@ -79,7 +77,7 @@ function exportAll() {
   <div class="preset">
     <n-select
       id="preset-select"
-      aria-label="会场预设"
+      :aria-label="t('preset.aria')"
       data-testid="preset-select"
       :value="presetId"
       :options="options"
@@ -87,27 +85,27 @@ function exportAll() {
       @update:value="(v: string) => emit('change', v)"
     />
     <div class="pacts">
-      <n-button size="tiny" secondary :disabled="disabled" data-testid="preset-new" @click="openNew">新建自定义</n-button>
-      <n-button v-if="editing" size="tiny" secondary :disabled="disabled" data-testid="preset-edit" @click="openEdit">编辑</n-button>
-      <n-button size="tiny" quaternary :disabled="disabled" @click="importer?.click()">导入</n-button>
-      <n-button v-if="s.customSpecs.value.length" size="tiny" quaternary @click="exportAll">导出（{{ s.customSpecs.value.length }}）</n-button>
+      <n-button size="tiny" secondary :disabled="disabled" data-testid="preset-new" @click="openNew">{{ t('preset.new') }}</n-button>
+      <n-button v-if="editing" size="tiny" secondary :disabled="disabled" data-testid="preset-edit" @click="openEdit">{{ t('preset.edit') }}</n-button>
+      <n-button size="tiny" quaternary :disabled="disabled" @click="importer?.click()">{{ t('preset.import') }}</n-button>
+      <n-button v-if="s.customSpecs.value.length" size="tiny" quaternary @click="exportAll">{{ t('preset.export', { n: s.customSpecs.value.length }) }}</n-button>
       <input ref="importer" type="file" accept="application/json,.json" hidden @change="onImport" />
     </div>
     <div class="tags">
-      <n-tag v-if="preset.custom" size="small" :bordered="false" type="info">自定义</n-tag>
-      <n-tag size="small" :bordered="false" :type="IMPL[preset.implementationStatus]?.type ?? 'default'">
-        {{ IMPL[preset.implementationStatus]?.label }}
+      <n-tag v-if="preset.custom" size="small" :bordered="false" type="info">{{ t('preset.custom') }}</n-tag>
+      <n-tag size="small" :bordered="false" :type="IMPL[preset.implementationStatus] ?? 'default'">
+        {{ t(`preset.impl.${preset.implementationStatus}`) }}
       </n-tag>
-      <n-tag size="small" :bordered="false">{{ VERIFY[preset.verificationStatus] }}{{ preset.verifiedAt ? ` · ${preset.verifiedAt}` : '' }}</n-tag>
-      <n-tag v-if="preset.phase" size="small" :bordered="false">{{ preset.phase }}</n-tag>
+      <n-tag size="small" :bordered="false">{{ t(`preset.verify.${preset.verificationStatus}`) }}{{ preset.verifiedAt ? ` · ${preset.verifiedAt}` : '' }}</n-tag>
+      <n-tag v-if="tx(preset.phase)" size="small" :bordered="false">{{ tx(preset.phase) }}</n-tag>
     </div>
     <ul class="summary">
-      <li v-for="(line, i) in preset.summary" :key="i">{{ line }}</li>
+      <li v-for="(line, i) in preset.summary" :key="i">{{ tx(line) }}</li>
     </ul>
-    <div v-if="preset.linkNote" class="note">{{ preset.linkNote }}</div>
+    <div v-if="preset.linkNote" class="note">{{ tx(preset.linkNote) }}</div>
     <details v-if="preset.sources.length" class="sources">
-      <summary>政策来源（{{ preset.sources.length }}）</summary>
-      <div class="muted small">以下地址仅以文本展示，本工具不会访问它们。请自行在浏览器中核对最新版本。</div>
+      <summary>{{ t('preset.sources', { n: preset.sources.length }) }}</summary>
+      <div class="muted small">{{ t('preset.sourcesNote') }}</div>
       <ul>
         <li v-for="(src, i) in preset.sources" :key="i">
           {{ src.label }}<span v-if="src.section"> · {{ src.section }}</span>

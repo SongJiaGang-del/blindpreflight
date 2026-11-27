@@ -11,7 +11,8 @@ import {
   SEVERITY_LABEL,
   SOURCE_LABEL,
 } from '@/domain/labels'
-import { ZONE_LABEL } from '@/rules/core'
+import { ZONE_LABEL } from '@/domain/labels'
+import { type Locale, type Text, pick } from '@/domain/text'
 import { escapeHtml as e } from '@/utils/safe-text'
 import type { Report, ReportFinding } from './build'
 
@@ -32,91 +33,155 @@ ul{margin:4px 0;padding-left:20px}.url{font-family:ui-monospace,Consolas,monospa
 @media print{body{margin:0;max-width:none}.finding{page-break-inside:avoid}h2{page-break-after:avoid}}
 `
 
-function location(f: ReportFinding): string {
+type Phrase = Record<Locale, string>
+const P = {
+  title: { zh: 'BlindPreflight 匿名性预检报告', en: 'BlindPreflight anonymity preflight report' },
+  docLevel: { zh: '文档级', en: 'document-level' },
+  policy: { zh: '政策来源', en: 'Policy sources' },
+  confidence: { zh: '置信度', en: 'confidence' },
+  matchedTerm: { zh: ' · 匹配了你提供的词', en: ' · matched one of your terms' },
+  source: { zh: '来源', en: 'source' },
+  linkTarget: { zh: '真实链接目标', en: 'Real link target' },
+  visible: { zh: '可见文字', en: 'visible text' },
+  suggestion: { zh: '建议', en: 'Suggestion' },
+  review: { zh: '复核状态', en: 'Review status' },
+  main: { zh: '主稿', en: 'Main paper' },
+  supplement: { zh: '补充材料', en: 'Supplement' },
+  sourceArchive: { zh: '源文件包', en: 'Source archive' },
+  all: { zh: '全部', en: 'All' },
+  generated: { zh: '生成于', en: 'Generated' },
+  scan: { zh: '扫描', en: 'scan' },
+  app: { zh: '应用', en: 'app' },
+  ruleset: { zh: '规则集', en: 'ruleset' },
+  schema: { zh: '报告格式', en: 'report format' },
+  redacted: { zh: '证据片段已脱敏。', en: 'Evidence is redacted. ' },
+  notRedacted: { zh: '包含完整证据原文，请勿外传。', en: 'Contains full evidence text; do not share. ' },
+  namesHidden: { zh: '文件名已隐藏。', en: 'File names are hidden. ' },
+  high: { zh: '高优先级', en: 'High' },
+  medium: { zh: '需核实', en: 'Check' },
+  info: { zh: '提示', en: 'Info' },
+  pagesChecked: { zh: '已检查页', en: 'pages checked' },
+  preset: { zh: '会场预设', en: 'Venue preset' },
+  presetVersion: { zh: '预设版本', en: 'preset version' },
+  verification: { zh: '资料核验', en: 'verification' },
+  implementation: { zh: '实现程度', en: 'implementation' },
+  files: { zh: '文件', en: 'Files' },
+  file: { zh: '文件', en: 'File' },
+  role: { zh: '角色', en: 'Role' },
+  pageCount: { zh: '页数', en: 'Pages' },
+  parse: { zh: '解析', en: 'Parsing' },
+  coverage: { zh: '覆盖范围与未检查项', en: 'Coverage and gaps' },
+  capability: { zh: '能力', en: 'Capability' },
+  status: { zh: '状态', en: 'Status' },
+  note: { zh: '说明', en: 'Notes' },
+  compare: { zh: '与上一版对比', en: 'Compared with the previous version' },
+  presetChanged: { zh: '两次检查使用的会场预设不同。', en: 'The two checks used different venue presets.' },
+  checklist: { zh: '人工核对清单', en: 'Manual checklist' },
+  none: { zh: '无', en: 'None' },
+} satisfies Record<string, Phrase>
+
+function location(f: ReportFinding, loc: Locale): string {
   const parts = [e(f.document)]
-  if (f.page == null) parts.push('文档级')
-  else parts.push(f.pages.length > 1 ? `第 ${f.pages.map(String).join('、')} 页` : `第 ${f.page} 页`)
-  if (f.zone) parts.push(e(ZONE_LABEL[f.zone]))
+  if (f.page == null) parts.push(P.docLevel[loc])
+  else if (loc === 'zh') parts.push(f.pages.length > 1 ? `第 ${f.pages.map(String).join('、')} 页` : `第 ${f.page} 页`)
+  else parts.push(f.pages.length > 1 ? `pages ${f.pages.map(String).join(', ')}` : `page ${f.page}`)
+  if (f.zone) parts.push(e(pick(ZONE_LABEL[f.zone], loc)))
   if (f.field) parts.push(e(f.field))
   return parts.join(' · ')
 }
 
-function findingHtml(f: ReportFinding): string {
+function findingHtml(f: ReportFinding, loc: Locale): string {
+  const L = (t: Text) => e(pick(t, loc))
+  const paren = (s: string) => (loc === 'zh' ? `（${s}）` : ` (${s})`)
   const refs = f.policyRefs.length
-    ? `<div class="small muted">政策来源：${f.policyRefs.map((p) => `${e(p.label)} <span class="url">${e(p.url)}</span>${p.note ? `（${e(p.note)}）` : ''}`).join('；')}</div>`
+    ? `<div class="small muted">${P.policy[loc]}: ${f.policyRefs.map((p) => `${e(p.label)} <span class="url">${e(p.url)}</span>${p.note ? paren(e(p.note)) : ''}`).join('; ')}</div>`
     : ''
   return `<div class="finding sev-${f.severity}">
-<div><b class="${f.severity}">${e(SEVERITY_LABEL[f.severity])}</b> · ${e(f.ruleIds.join(' + '))} · ${e(CATEGORY_LABEL[f.category])} · 置信度 ${e(CONFIDENCE_LABEL[f.confidence])}${f.matchedUserTerm ? ' · 匹配了你提供的词' : ''}</div>
-<div class="meta">${location(f)} · 来源：${e(SOURCE_LABEL[f.source])}</div>
+<div><b class="${f.severity}">${L(SEVERITY_LABEL[f.severity])}</b> · ${e(f.ruleIds.join(' + '))} · ${L(CATEGORY_LABEL[f.category])} · ${P.confidence[loc]} ${L(CONFIDENCE_LABEL[f.confidence])}${f.matchedUserTerm ? P.matchedTerm[loc] : ''}</div>
+<div class="meta">${location(f, loc)} · ${P.source[loc]}: ${L(SOURCE_LABEL[f.source])}</div>
 <div class="evidence">${e(f.snippet)}</div>
-${f.linkTarget ? `<div class="small">真实链接目标：<span class="url">${e(f.linkTarget)}</span>${f.visibleText ? `；可见文字：${e(f.visibleText)}` : ''}</div>` : ''}
+${f.linkTarget ? `<div class="small">${P.linkTarget[loc]}: <span class="url">${e(f.linkTarget)}</span>${f.visibleText ? `; ${P.visible[loc]}: ${e(f.visibleText)}` : ''}</div>` : ''}
 <ul>${f.reasons.map((r) => `<li>${e(r)}</li>`).join('')}</ul>
-<div><b>建议：</b>${e(f.suggestion)}</div>
+<div><b>${P.suggestion[loc]}:</b> ${e(f.suggestion)}</div>
 ${refs}
-${f.review ? `<div class="small">复核状态：${e(REVIEW_LABEL[f.review.status])}${f.review.reason ? `（${e(f.review.reason)}）` : ''}</div>` : ''}
+${f.review ? `<div class="small">${P.review[loc]}: ${L(REVIEW_LABEL[f.review.status])}${f.review.reason ? paren(e(f.review.reason)) : ''}</div>` : ''}
 </div>`
 }
 
 export function renderReportHtml(r: Report): string {
+  const loc: Locale = r.options.locale ?? 'zh'
+  const zh = loc === 'zh'
+  const L = (t: Text) => e(pick(t, loc))
   const s = r.summary
+  const role = (x: string) => (x === 'main' ? P.main[loc] : x === 'source' ? P.sourceArchive[loc] : P.supplement[loc])
   const docs = r.documents
-    .map((d) => `<tr><td>${e(d.name)}</td><td>${d.role === 'main' ? '主稿' : d.role === 'source' ? '源文件包' : '补充材料'}</td><td>${d.role === 'source' ? '—' : d.pageCount}</td><td>${e(d.parseStatus)}</td></tr>`)
+    .map((d) => `<tr><td>${e(d.name)}</td><td>${role(d.role)}</td><td>${d.role === 'source' ? '—' : d.pageCount}</td><td>${e(d.parseStatus)}</td></tr>`)
     .join('')
+  const pagesNote = (pages?: number[]) => (pages?.length ? (zh ? `（页：${pages.join('、')}）` : ` (pages: ${pages.join(', ')})`) : '')
   const cov = r.coverage
     .map(
       (c) =>
-        `<tr><td>${e(c.document ?? '全部')}</td><td>${e(CAPABILITY_LABEL[c.capability])}</td><td>${e(COVERAGE_LABEL[c.status])}</td><td>${e(c.reason)}${c.pageNumbers?.length ? `（页：${c.pageNumbers.join('、')}）` : ''}</td></tr>`,
+        `<tr><td>${e(c.document ?? P.all[loc])}</td><td>${L(CAPABILITY_LABEL[c.capability])}</td><td>${L(COVERAGE_LABEL[c.status])}</td><td>${e(c.reason)}${pagesNote(c.pageNumbers)}</td></tr>`,
     )
     .join('')
   const disabled = r.rules.filter((x) => x.status === 'disabled')
   const sources = r.preset.sources.map((x) => `<li>${e(x.label)} ${x.section ? `· ${e(x.section)}` : ''}<br><span class="url">${e(x.url)}</span></li>`).join('')
   const groups: Array<[string, ReportFinding[]]> = [
-    ['高优先级', r.findings.filter((f) => f.severity === 'high')],
-    ['需核实', r.findings.filter((f) => f.severity === 'medium')],
-    ['提示', r.findings.filter((f) => f.severity === 'info')],
+    [P.high[loc], r.findings.filter((f) => f.severity === 'high')],
+    [P.medium[loc], r.findings.filter((f) => f.severity === 'medium')],
+    [P.info[loc], r.findings.filter((f) => f.severity === 'info')],
   ]
+  const totals = zh
+    ? `已标记修改 ${s.resolved} 条 · 已忽略 ${s.dismissed} 条 · 文字过少或疑似乱码的页 ${s.pagesWithWeakText} 页 · 使用自定义词 ${r.userTermCount} 个（词条本身不写入报告）`
+    : `${s.resolved} marked fixed · ${s.dismissed} dismissed · ${s.pagesWithWeakText} page(s) with little or garbled text · ${r.userTermCount} custom term(s) used (the terms themselves are not in this report)`
+  const excluded = r.options.includeDismissed ? '' : zh ? `已排除 ${s.excludedFromReport} 条已忽略的发现。` : `${s.excludedFromReport} dismissed finding(s) excluded.`
+  const presetLine = `<b>${e(r.preset.venue)}</b> ${e(r.preset.track)} · ${e(r.preset.phase)} · ${P.presetVersion[loc]} ${e(r.preset.version)} · ${P.verification[loc]}: ${e(r.preset.verificationStatus)}${r.preset.verifiedAt ? ` (${e(r.preset.verifiedAt)})` : ''} · ${P.implementation[loc]}: ${e(r.preset.implementationStatus)}`
+  const disabledLine = disabled.length
+    ? `<div class="small">${zh ? '当前预设未启用的检查：' : 'Checks disabled by this preset: '}${disabled.map((x) => e(`${x.ruleId} ${x.title}`)).join(zh ? '、' : ', ')}</div>`
+    : ''
+  const comparison = r.comparison
+    ? zh
+      ? `<h2>${P.compare.zh}</h2><div>已修复 <b>${r.comparison.fixed}</b> 条 · 仍存在 <b>${r.comparison.remaining}</b> 条 · 新增 <b>${r.comparison.added}</b> 条${r.comparison.reopened ? ` · 标记为已修改但仍存在 <b class="high">${r.comparison.reopened}</b> 条` : ''}</div>`
+      : `<h2>${P.compare.en}</h2><div>Fixed <b>${r.comparison.fixed}</b> · still present <b>${r.comparison.remaining}</b> · new <b>${r.comparison.added}</b>${r.comparison.reopened ? ` · marked fixed but still present <b class="high">${r.comparison.reopened}</b>` : ''}</div>`
+    : ''
+  const presetChanged = r.comparison?.presetChanged ? `<div class="small muted">${P.presetChanged[loc]}</div>` : ''
+  const checklist = r.checklist
+    ? `<h2>${P.checklist[loc]}${zh ? '（' : ' ('}${r.checklist.filter((c) => c.checked).length} / ${r.checklist.length}${zh ? '）' : ')'}</h2><ul class="check">${r.checklist.map((c) => `<li><span class="box">${c.checked ? '☑' : '☐'}</span> ${e(c.title)}</li>`).join('')}</ul>`
+    : ''
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
+<html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <meta name="referrer" content="no-referrer">
-<title>BlindPreflight 匿名性预检报告</title><style>${CSS}</style></head><body>
-<h1>BlindPreflight 匿名性预检报告</h1>
-<div class="muted small">生成于 ${e(r.generatedAt)} · 扫描 ${e(r.scanId)} · 应用 ${e(r.appVersion)} · 规则集 ${e(r.rulesetVersion)} · 报告格式 ${e(r.schemaVersion)}</div>
-<div class="muted small">${r.options.redactEvidence ? '证据片段已脱敏。' : '包含完整证据原文，请勿外传。'}${r.options.hideFilenames ? '文件名已隐藏。' : ''}${r.options.includeDismissed ? '' : `已排除 ${s.excludedFromReport} 条已忽略的发现。`}</div>
+<title>${P.title[loc]}</title><style>${CSS}</style></head><body>
+<h1>${P.title[loc]}</h1>
+<div class="muted small">${P.generated[loc]} ${e(r.generatedAt)} · ${P.scan[loc]} ${e(r.scanId)} · ${P.app[loc]} ${e(r.appVersion)} · ${P.ruleset[loc]} ${e(r.rulesetVersion)} · ${P.schema[loc]} ${e(r.schemaVersion)}</div>
+<div class="muted small">${r.options.redactEvidence ? P.redacted[loc] : P.notRedacted[loc]}${r.options.hideFilenames ? P.namesHidden[loc] : ''}${excluded}</div>
 
 <div class="counts">
-<div class="count high"><b>${s.bySeverity.high}</b>高优先级</div>
-<div class="count medium"><b>${s.bySeverity.medium}</b>需核实</div>
-<div class="count info"><b>${s.bySeverity.info}</b>提示</div>
-<div class="count"><b>${s.pagesChecked}</b>已检查页</div>
+<div class="count high"><b>${s.bySeverity.high}</b>${P.high[loc]}</div>
+<div class="count medium"><b>${s.bySeverity.medium}</b>${P.medium[loc]}</div>
+<div class="count info"><b>${s.bySeverity.info}</b>${P.info[loc]}</div>
+<div class="count"><b>${s.pagesChecked}</b>${P.pagesChecked[loc]}</div>
 </div>
-<div class="small">已标记修改 ${s.resolved} 条 · 已忽略 ${s.dismissed} 条 · 文字过少或疑似乱码的页 ${s.pagesWithWeakText} 页 · 使用自定义词 ${r.userTermCount} 个（词条本身不写入报告）</div>
+<div class="small">${totals}</div>
 
-<h2>会场预设</h2>
-<div><b>${e(r.preset.venue)}</b> ${e(r.preset.track)} · ${e(r.preset.phase)} · 预设版本 ${e(r.preset.version)} · 资料核验：${e(r.preset.verificationStatus)}${r.preset.verifiedAt ? `（${e(r.preset.verifiedAt)}）` : ''} · 实现程度：${e(r.preset.implementationStatus)}</div>
+<h2>${P.preset[loc]}</h2>
+<div>${presetLine}</div>
 ${sources ? `<ul class="small">${sources}</ul>` : ''}
 ${r.preset.limitations.length ? `<ul class="small muted">${r.preset.limitations.map((l) => `<li>${e(l)}</li>`).join('')}</ul>` : ''}
 
-<h2>文件</h2>
-<table><tr><th>文件</th><th>角色</th><th>页数</th><th>解析</th></tr>${docs}</table>
+<h2>${P.files[loc]}</h2>
+<table><tr><th>${P.file[loc]}</th><th>${P.role[loc]}</th><th>${P.pageCount[loc]}</th><th>${P.parse[loc]}</th></tr>${docs}</table>
 
-<h2>覆盖范围与未检查项</h2>
-<table><tr><th>文件</th><th>能力</th><th>状态</th><th>说明</th></tr>${cov}</table>
-${disabled.length ? `<div class="small">当前预设未启用的检查：${disabled.map((x) => e(`${x.ruleId} ${x.title}`)).join('、')}</div>` : ''}
+<h2>${P.coverage[loc]}</h2>
+<table><tr><th>${P.file[loc]}</th><th>${P.capability[loc]}</th><th>${P.status[loc]}</th><th>${P.note[loc]}</th></tr>${cov}</table>
+${disabledLine}
 
-${
-  r.comparison
-    ? `<h2>与上一版对比</h2><div>已修复 <b>${r.comparison.fixed}</b> 条 · 仍存在 <b>${r.comparison.remaining}</b> 条 · 新增 <b>${r.comparison.added}</b> 条${r.comparison.reopened ? ` · 标记为已修改但仍存在 <b class="high">${r.comparison.reopened}</b> 条` : ''}</div>${r.comparison.presetChanged ? '<div class="small muted">两次检查使用的会场预设不同。</div>' : ''}`
-    : ''
-}
-${
-  r.checklist
-    ? `<h2>人工核对清单（${r.checklist.filter((c) => c.checked).length} / ${r.checklist.length}）</h2><ul class="check">${r.checklist.map((c) => `<li><span class="box">${c.checked ? '☑' : '☐'}</span> ${e(c.title)}</li>`).join('')}</ul>`
-    : ''
-}
+${comparison}${presetChanged}
+${checklist}
 
 ${groups
-  .map(([title, list]) => `<h2>${e(title)}（${list.length}）</h2>${list.length ? list.map(findingHtml).join('\n') : '<div class="muted">无</div>'}`)
+  .map(([title, list]) => `<h2>${e(title)}${zh ? '（' : ' ('}${list.length}${zh ? '）' : ')'}</h2>${list.length ? list.map((f) => findingHtml(f, loc)).join('\n') : `<div class="muted">${P.none[loc]}</div>`}`)
   .join('\n')}
 
 <div class="disclaimer small">${e(r.disclaimer)}</div>

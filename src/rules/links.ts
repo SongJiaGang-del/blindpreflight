@@ -5,6 +5,7 @@
 import type { Confidence, DocumentFacts, Severity, Zone } from '@/domain/types'
 import { type FindingDraft, type RuleContext, ZONE_LABEL, around, scanDoc, zoneOf } from './core'
 import { BARE_HOST_RE, SELF_CODE_CONTEXT, SELF_CODE_STRONG, SELF_CODE_WEAK, URL_RE } from './patterns'
+import { L, type Text, join } from '@/domain/text'
 
 export type LinkKind =
   | 'anonymous'
@@ -23,7 +24,7 @@ export interface ParsedLink {
   /** 仓库 / 模型站点的 owner（用户名或组织名） */
   owner: string | null
   repo: string | null
-  label: string
+  label: Text
 }
 
 const TRAILING = /[.,;:!?'"”’»。，；：！？、]+$/u
@@ -65,24 +66,24 @@ export function parseLink(input: string): ParsedLink | null {
   const segs = u.pathname.split('/').filter(Boolean)
   const base = { url, host, owner: null, repo: null }
   if (ANON.test(host) || (host.endsWith('osf.io') && /view_only=/.test(u.search)))
-    return { ...base, kind: 'anonymous', label: '匿名托管链接' }
-  if (SCHOLARLY.test(host)) return { ...base, kind: 'scholarly', label: '学术索引 / DOI 链接' }
+    return { ...base, kind: 'anonymous', label: L('匿名托管链接', 'anonymous hosting link') }
+  if (SCHOLARLY.test(host)) return { ...base, kind: 'scholarly', label: L('学术索引 / DOI 链接', 'scholarly index / DOI link') }
   if (REPO_HOSTS.test(host)) {
     const owner = segs[0] && !GITHUB_NON_OWNER.has(segs[0].toLowerCase()) ? segs[0] : null
-    return { ...base, kind: 'repository', owner, repo: segs[1]?.replace(/\.git$/, '') ?? null, label: `${host.replace(/^www\./, '')} 仓库` }
+    return { ...base, kind: 'repository', owner, repo: segs[1]?.replace(/\.git$/, '') ?? null, label: L(`${host.replace(/^www\./, '')} 仓库`, `${host.replace(/^www\./, '')} repository`) }
   }
   if (host === 'huggingface.co' || host === 'hf.co') {
     const s = segs[0] === 'datasets' || segs[0] === 'spaces' ? segs.slice(1) : segs
-    return { ...base, kind: 'modelHub', owner: s[0] ?? null, repo: s[1] ?? null, label: 'Hugging Face 页面' }
+    return { ...base, kind: 'modelHub', owner: s[0] ?? null, repo: s[1] ?? null, label: L('Hugging Face 页面', 'Hugging Face page') }
   }
   if (/\.github\.io$|\.gitlab\.io$|\.netlify\.app$|\.vercel\.app$|\.pages\.dev$|^sites\.google\.com$/.test(host)) {
     const owner = host.endsWith('.github.io') || host.endsWith('.gitlab.io') ? host.split('.')[0] ?? null : null
-    return { ...base, kind: 'personalPage', owner, label: '个人 / 项目主页' }
+    return { ...base, kind: 'personalPage', owner, label: L('个人 / 项目主页', 'personal / project homepage') }
   }
-  if (CLOUD.test(host)) return { ...base, kind: 'cloudDrive', label: '云盘 / 共享存储' }
-  if (VIDEO_SOCIAL.test(host)) return { ...base, kind: 'videoSocial', label: '视频 / 社交 / 个人档案站点' }
-  if (PERSONAL_PATH.test(u.pathname) || /^~/.test(segs[0] ?? '')) return { ...base, kind: 'personalPage', label: '个人主页' }
-  return { ...base, kind: 'other', label: '外部网址' }
+  if (CLOUD.test(host)) return { ...base, kind: 'cloudDrive', label: L('云盘 / 共享存储', 'cloud drive / file share') }
+  if (VIDEO_SOCIAL.test(host)) return { ...base, kind: 'videoSocial', label: L('视频 / 社交 / 个人档案站点', 'video / social / profile site') }
+  if (PERSONAL_PATH.test(u.pathname) || /^~/.test(segs[0] ?? '')) return { ...base, kind: 'personalPage', label: L('个人主页', 'personal homepage') }
+  return { ...base, kind: 'other', label: L('外部网址', 'external URL') }
 }
 
 function ownerMatches(owner: string | null, ctx: RuleContext): string | null {
@@ -129,17 +130,19 @@ export function selfContextOf(text: string, link: ParsedLink): boolean {
 interface LinkVerdict {
   severity: Severity
   confidence: Confidence
-  reasons: string[]
-  suggestion: string
+  reasons: Text[]
+  suggestion: Text
 }
 
 function judge(link: ParsedLink, zone: Zone, selfContext: boolean, ctx: RuleContext): LinkVerdict | null {
   const owned = ownerMatches(link.owner, ctx)
-  const reasons: string[] = []
-  const anonSuggestion =
-    '换成匿名托管（如 anonymous.4open.science）或在补充材料中提供代码；本工具不能确认外站内容已匿名，请自行检查仓库提交记录、README 与 LICENSE。'
-  if (owned) reasons.push(`链接中的用户名/组织 “${link.owner}” 与「${owned}」相符。`)
-  if (selfContext) reasons.push('上下文表明这是作者自己的代码、数据或项目页。')
+  const reasons: Text[] = []
+  const anonSuggestion = L(
+    '换成匿名托管（如 anonymous.4open.science）或在补充材料中提供代码；本工具不能确认外站内容已匿名，请自行检查仓库提交记录、README 与 LICENSE。',
+    'Use anonymous hosting (e.g. anonymous.4open.science) or ship the code as supplementary material. BlindPreflight cannot confirm the external content is anonymous; check commit history, README and LICENSE yourself.',
+  )
+  if (owned) reasons.push(L(`链接中的用户名/组织 “${link.owner}” 与「${owned}」相符。`, `The user / organization “${link.owner}” in the link matches “${owned}”.`))
+  if (selfContext) reasons.push(L('上下文表明这是作者自己的代码、数据或项目页。', 'The context says this is the authors’ own code, data or project page.'))
   const prominent = zone === 'authorBlock' || zone === 'header' || zone === 'footer'
   switch (link.kind) {
     case 'scholarly':
@@ -148,35 +151,46 @@ function judge(link: ParsedLink, zone: Zone, selfContext: boolean, ctx: RuleCont
       return {
         severity: 'info',
         confidence: 'medium',
-        reasons: ['匿名托管链接。'],
-        suggestion: '提交前打开链接自查一次：匿名托管只替换显示名，不会清理代码注释、提交信息、文档里的姓名或机构。',
+        reasons: [L('匿名托管链接。', 'Anonymous hosting link.')],
+        suggestion: L(
+          '提交前打开链接自查一次：匿名托管只替换显示名，不会清理代码注释、提交信息、文档里的姓名或机构。',
+          'Open it once before submitting: anonymous hosting only hides the display name; names or institutions in code comments, commit messages and docs remain.',
+        ),
       }
     case 'repository':
     case 'modelHub':
     case 'personalPage':
     case 'cloudDrive': {
-      const kindReason: Record<string, string> = {
-        repository: `${link.label}，owner 为 “${link.owner ?? '?'}”，可直接定位作者或实验室。`,
-        modelHub: `Hugging Face 页面，owner 为 “${link.owner ?? '?'}”。`,
-        personalPage: '个人或项目主页的域名/路径常含姓名。',
-        cloudDrive: '云盘分享链接可能显示上传者姓名或账号邮箱。',
+      const kindReason: Record<string, Text> = {
+        repository: L(
+          `${link.label.zh}，owner 为 “${link.owner ?? '?'}”，可直接定位作者或实验室。`,
+          `${link.label.en} owned by “${link.owner ?? '?'}”, which points straight to the authors or lab.`,
+        ),
+        modelHub: L(`Hugging Face 页面，owner 为 “${link.owner ?? '?'}”。`, `Hugging Face page owned by “${link.owner ?? '?'}”.`),
+        personalPage: L('个人或项目主页的域名/路径常含姓名。', 'Personal or project homepage domains / paths often contain names.'),
+        cloudDrive: L('云盘分享链接可能显示上传者姓名或账号邮箱。', 'Cloud-drive share links may show the uploader’s name or account email.'),
       }
       reasons.unshift(kindReason[link.kind] ?? link.label)
       if (owned || selfContext || prominent)
         return { severity: 'high', confidence: owned ? 'high' : 'medium', reasons, suggestion: anonSuggestion }
       if (link.kind === 'repository' || link.kind === 'modelHub') {
-        reasons.push('没有看到 “our code” 之类的自述；如果这是第三方公开库，一般没问题。')
-        return { severity: 'info', confidence: 'low', reasons, suggestion: '若是作者自己的仓库，请' + anonSuggestion }
+        reasons.push(L('没有看到 “our code” 之类的自述；如果这是第三方公开库，一般没问题。', 'No “our code”-style self-reference found; if this is a public third-party library it is usually fine.'))
+        return { severity: 'info', confidence: 'low', reasons, suggestion: join([L('若是作者自己的仓库，请', 'If this is your own repository: '), anonSuggestion]) }
       }
       return { severity: 'medium', confidence: 'medium', reasons, suggestion: anonSuggestion }
     }
     case 'videoSocial':
-      reasons.unshift(`${link.label}可能关联到个人账号。`)
-      return { severity: selfContext || owned ? 'high' : 'medium', confidence: 'medium', reasons, suggestion: '视频或演示改为匿名上传（不显示频道名），或放入补充材料。' }
+      reasons.unshift(L(`${link.label.zh}可能关联到个人账号。`, `A ${link.label.en} may be tied to a personal account.`))
+      return {
+        severity: selfContext || owned ? 'high' : 'medium',
+        confidence: 'medium',
+        reasons,
+        suggestion: L('视频或演示改为匿名上传（不显示频道名），或放入补充材料。', 'Re-upload videos or demos anonymously (no channel name) or put them in the supplement.'),
+      }
     default:
       if (!prominent && !selfContext && !owned) return null
-      reasons.unshift(prominent ? `网址位于${ZONE_LABEL[zone]}。` : '外部网址。')
-      return { severity: 'medium', confidence: 'low', reasons, suggestion: '确认该网址不指向作者主页或机构内部页面。' }
+      reasons.unshift(prominent ? L(`网址位于${ZONE_LABEL[zone].zh}。`, `A URL in the ${ZONE_LABEL[zone].en}.`) : L('外部网址。', 'External URL.'))
+      return { severity: 'medium', confidence: 'low', reasons, suggestion: L('确认该网址不指向作者主页或机构内部页面。', 'Make sure it does not point to an author homepage or internal institutional page.') }
   }
 }
 
@@ -240,21 +254,24 @@ export function ruleEmbeddedLinks(doc: DocumentFacts, ctx: RuleContext): Finding
         verdict = {
           ...verdict,
           severity: verdict.severity === 'info' ? 'medium' : verdict.severity,
-          reasons: [...verdict.reasons, '可见文字与真实目标不同，读者看不到链接实际指向哪里。'],
+          reasons: [...verdict.reasons, L('可见文字与真实目标不同，读者看不到链接实际指向哪里。', 'The visible text differs from the real target, so readers cannot see where it points.')],
         }
       }
       if (!verdict && flagAll && link) {
         verdict = {
           severity: 'medium',
           confidence: 'high',
-          reasons: [`${link.label}。`],
-          suggestion: '该会场格式条款要求投稿 PDF 不含可点击外链；请去掉超链接（保留纯文本引用即可）。',
+          reasons: [L(`${link.label.zh}。`, `${link.label.en.charAt(0).toUpperCase()}${link.label.en.slice(1)}.`)],
+          suggestion: L(
+            '该会场格式条款要求投稿 PDF 不含可点击外链；请去掉超链接（保留纯文本引用即可）。',
+            'This venue’s format rules forbid clickable external links in the PDF; remove the hyperlink (plain-text references are fine).',
+          ),
         }
       } else if (verdict && flagAll) {
         verdict = {
           ...verdict,
           severity: verdict.severity === 'info' ? 'medium' : verdict.severity,
-          reasons: [...verdict.reasons, `当前预设（${ctx.preset.venue}）要求检查所有内嵌超链接。`],
+          reasons: [...verdict.reasons, L(`当前预设（${ctx.preset.venue.zh}）要求检查所有内嵌超链接。`, `The current preset (${ctx.preset.venue.en}) requires checking every embedded link.`)],
         }
       }
       if (!verdict) continue
@@ -263,7 +280,7 @@ export function ruleEmbeddedLinks(doc: DocumentFacts, ctx: RuleContext): Finding
         category: link?.kind === 'repository' || link?.kind === 'modelHub' ? 'repository' : 'link',
         source: 'link',
         ...verdict,
-        reasons: [visible ? `可见文字 “${visible}” → 真实目标 ${a.url}` : `不可见链接 → ${a.url}`, ...verdict.reasons],
+        reasons: [visible ? L(`可见文字 “${visible}” → 真实目标 ${a.url}`, `Visible text “${visible}” → real target ${a.url}`) : L(`不可见链接 → ${a.url}`, `Invisible link → ${a.url}`), ...verdict.reasons],
         pageNumber: page.pageNumber,
         rect: a.rect,
         zone,

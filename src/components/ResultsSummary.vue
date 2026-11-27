@@ -3,10 +3,13 @@ import { computed } from 'vue'
 import type { Finding, FindingCategory, ScanResult, Severity } from '@/domain/types'
 import { CAPABILITY_LABEL, CATEGORY_LABEL, COVERAGE_LABEL, SEVERITY_LABEL, isDismissed } from '@/domain/labels'
 import { useSession } from '@/app/session'
+import { useI18n } from '@/i18n'
+import { presetName } from '@/presets'
 
 const props = defineProps<{ result: ScanResult; docLabels: Record<string, string> }>()
 const emit = defineEmits<{ severity: [sev: Severity]; category: [cat: FindingCategory]; page: [docId: string, page: number]; ocr: [] }>()
 const s = useSession()
+const { t, tx, locale } = useI18n()
 
 const SEV_RANK: Record<Severity, number> = { high: 3, medium: 2, info: 1 }
 const SEVS: Severity[] = ['high', 'medium', 'info']
@@ -32,9 +35,9 @@ const donePct = computed(() => (total.value ? Math.round((counts.value.done / to
 /** 结论印章：只看待处理项，不打分（分数会给人“合规程度”的错觉） */
 const verdict = computed(() => {
   const c = counts.value
-  if (c.high) return { tone: 'high', stamp: '需修改', text: `还有 ${c.high} 处几乎可以确定会暴露身份的问题，请在源文件中修改后重新导出。` }
-  if (c.medium) return { tone: 'medium', stamp: '待核实', text: `没有高优先级问题，但还有 ${c.medium} 处需要你结合上下文判断。` }
-  return { tone: 'ok', stamp: '未见明显泄露', text: '没有待处理的高优先级或需核实项。这不代表稿件一定合规——请看下方未覆盖项，并人工复核图片、扫描页和外部链接。' }
+  if (c.high) return { tone: 'high', stamp: t('sum.stampHigh'), text: t('sum.textHigh', { n: c.high }) }
+  if (c.medium) return { tone: 'medium', stamp: t('sum.stampMedium'), text: t('sum.textMedium', { n: c.medium }) }
+  return { tone: 'ok', stamp: t('sum.stampOk'), text: t('sum.textOk') }
 })
 
 const pages = computed(() => props.result.documents.reduce((n, d) => n + d.pageCount, 0))
@@ -47,7 +50,7 @@ const byCategory = computed(() => {
     row[f.severity]++
     m.set(f.category, row)
   }
-  const rows = [...m.entries()].map(([cat, r]) => ({ cat, label: CATEGORY_LABEL[cat], ...r, sum: r.high + r.medium + r.info }))
+  const rows = [...m.entries()].map(([cat, r]) => ({ cat, label: tx(CATEGORY_LABEL[cat]), ...r, sum: r.high + r.medium + r.info }))
   rows.sort((a, b) => b.high - a.high || b.medium - a.medium || b.sum - a.sum)
   return rows
 })
@@ -79,11 +82,11 @@ const gaps = computed(() =>
     .filter((c) => c.status !== 'completed')
     .map((c) => ({
       key: `${c.documentId ?? 'all'}-${c.capability}`,
-      doc: c.documentId ? (props.docLabels[c.documentId] ?? c.documentId) : '全部',
-      cap: CAPABILITY_LABEL[c.capability],
-      status: COVERAGE_LABEL[c.status],
+      doc: c.documentId ? (props.docLabels[c.documentId] ?? c.documentId) : t('sum.all'),
+      cap: tx(CAPABILITY_LABEL[c.capability]),
+      status: tx(COVERAGE_LABEL[c.status]),
       tone: c.status,
-      reason: c.reason,
+      reason: tx(c.reason),
       pages: c.pageNumbers,
     })),
 )
@@ -100,38 +103,37 @@ const warnings = computed(() =>
 </script>
 
 <template>
-  <section class="summary" aria-label="检查摘要">
+  <section class="summary" :aria-label="t('sum.aria')">
     <div class="sheet">
       <div class="verdict" :class="`v-${verdict.tone}`">
         <div class="stamp" data-testid="verdict-stamp">{{ verdict.stamp }}</div>
         <div class="v-body">
-          <div class="v-title">匿名性自检意见</div>
+          <div class="v-title">{{ t('sum.title') }}</div>
           <p :data-testid="verdict.tone === 'ok' ? 'all-clear' : undefined">{{ verdict.text }}</p>
           <div class="meta">
-            {{ result.preset.venue }}{{ result.preset.year ? ` ${result.preset.year}` : '' }} 预设 · {{ result.documents.length }} 个 PDF · {{ pages }} 页<template v-if="result.source"> · 源文件包 {{ result.source.fileCount }} 个文件</template> ·
-            规则集 {{ result.rulesetVersion }}<template v-if="result.userTermCount"> · {{ result.userTermCount }} 个自定义词</template>
+            {{ t('sum.meta', { preset: presetName(result.preset, locale), pdfs: result.documents.length, pages }) }}<template v-if="result.source">{{ t('sum.metaSrc', { n: result.source.fileCount }) }}</template>{{ t('sum.metaRules', { v: result.rulesetVersion }) }}<template v-if="result.userTermCount">{{ t('sum.metaTerms', { n: result.userTermCount }) }}</template>
           </div>
         </div>
       </div>
 
       <div class="tiles">
         <button class="tile high" type="button" data-testid="count-high" @click="emit('severity', 'high')">
-          <b>{{ counts.high }}</b><span>高优先级</span>
+          <b>{{ counts.high }}</b><span>{{ t('sev.high') }}</span>
         </button>
         <button class="tile medium" type="button" data-testid="count-medium" @click="emit('severity', 'medium')">
-          <b>{{ counts.medium }}</b><span>需核实</span>
+          <b>{{ counts.medium }}</b><span>{{ t('sev.medium') }}</span>
         </button>
         <button class="tile info" type="button" data-testid="count-info" @click="emit('severity', 'info')">
-          <b>{{ counts.info }}</b><span>提示</span>
+          <b>{{ counts.info }}</b><span>{{ t('sev.info') }}</span>
         </button>
         <div class="tile plain">
-          <b>{{ counts.done }}</b><span>已处理</span>
+          <b>{{ counts.done }}</b><span>{{ t('sum.done') }}</span>
         </div>
       </div>
 
-      <div class="progress" :aria-label="`复核进度 ${counts.done} / ${total}`">
+      <div class="progress" :aria-label="`${t('sum.progress')} ${counts.done} / ${total}`">
         <div class="p-head">
-          <span>复核进度</span>
+          <span>{{ t('sum.progress') }}</span>
           <span class="num">{{ counts.done }} / {{ total }} · {{ donePct }}%</span>
         </div>
         <div class="p-bar" aria-hidden="true">
@@ -143,10 +145,10 @@ const warnings = computed(() =>
 
     <div v-if="byCategory.length" class="dist">
       <div class="dist-col">
-        <h3>按类别 <span class="muted">· 待处理</span></h3>
+        <h3>{{ t('sum.byCat') }} <span class="muted">{{ t('sum.open') }}</span></h3>
         <ul class="cats">
           <li v-for="r in byCategory" :key="r.cat">
-            <button type="button" :title="`只看“${r.label}”`" @click="emit('category', r.cat)">
+            <button type="button" :title="t('sum.onlyCat', { label: r.label })" @click="emit('category', r.cat)">
               <span class="c-label">{{ r.label }}</span>
               <span class="c-bar">
                 <span v-for="sv in SEVS" :key="sv" class="c-seg" :class="sv" :style="{ width: `${(r[sv] / maxCat) * 100}%` }" />
@@ -157,11 +159,11 @@ const warnings = computed(() =>
         </ul>
       </div>
       <div class="dist-col">
-        <h3>按页码 <span class="muted">· 点击跳到该页</span></h3>
+        <h3>{{ t('sum.byPage') }} <span class="muted">{{ t('sum.clickPage') }}</span></h3>
         <div v-for="d in byPage" :key="d.id" class="doc-strip">
           <div class="ds-label">
             {{ d.label }}
-            <span v-if="d.docLevel" class="muted">· 另有 {{ d.docLevel }} 条文档级</span>
+            <span v-if="d.docLevel" class="muted">{{ t('sum.docLevel', { n: d.docLevel }) }}</span>
           </div>
           <div class="cells" role="list">
             <button
@@ -171,8 +173,8 @@ const warnings = computed(() =>
               role="listitem"
               class="cell"
               :class="c.sev ?? 'none'"
-              :title="`第 ${c.page} 页${c.n ? `：${c.n} 条待处理（最高：${SEVERITY_LABEL[c.sev!]}）` : '：无待处理'}`"
-              :aria-label="`第 ${c.page} 页，${c.n} 条待处理`"
+              :title="c.n ? t('sum.cellTitle', { page: c.page, n: c.n, sev: tx(SEVERITY_LABEL[c.sev!]) }) : t('sum.cellNone', { page: c.page })"
+              :aria-label="t('sum.cellAria', { page: c.page, n: c.n })"
               @click="emit('page', d.id, c.page)"
             >
               <span v-if="d.cells.length <= 40">{{ c.page }}</span>
@@ -180,35 +182,35 @@ const warnings = computed(() =>
           </div>
         </div>
         <div class="legend">
-          <span><i class="cell high" />高优先级</span>
-          <span><i class="cell medium" />需核实</span>
-          <span><i class="cell info" />提示</span>
-          <span><i class="cell none" />无</span>
+          <span><i class="cell high" />{{ t('sev.high') }}</span>
+          <span><i class="cell medium" />{{ t('sev.medium') }}</span>
+          <span><i class="cell info" />{{ t('sev.info') }}</span>
+          <span><i class="cell none" />{{ t('sum.none') }}</span>
         </div>
       </div>
     </div>
 
-    <div v-for="w in warnings" :key="w.key" class="warn">{{ w.doc }}：{{ w.text }}</div>
+    <div v-for="w in warnings" :key="w.key" class="warn">{{ w.doc }}: {{ tx(w.text) }}</div>
 
     <div v-if="ocrSuggest" class="ocr-tip" data-testid="ocr-suggest">
-      有 {{ ocrSuggest }} 页文字缺失或乱码（可能是扫描页或图片），这些页上的姓名、机构没有被检查。
-      <button type="button" class="link" :disabled="s.busy.value" @click="emit('ocr')">开启本地 OCR 并重新检查</button>
+      {{ t('sum.ocrTip', { n: ocrSuggest }) }}
+      <button type="button" class="link" :disabled="s.busy.value" @click="emit('ocr')">{{ t('sum.ocrButton') }}</button>
     </div>
 
     <details class="coverage" data-testid="coverage">
-      <summary>覆盖范围：{{ gaps.length ? `${gaps.length} 项未完全检查` : '所有支持的项目均已检查' }}</summary>
+      <summary>{{ t('sum.coverage', { s: gaps.length ? t('sum.gaps', { n: gaps.length }) : t('sum.allCovered') }) }}</summary>
       <table>
         <tbody>
           <tr v-for="g in gaps" :key="g.key">
             <td class="nowrap">{{ g.doc }}</td>
             <td class="nowrap">{{ g.cap }}</td>
             <td class="nowrap" :class="`tone-${g.tone}`">{{ g.status }}</td>
-            <td>{{ g.reason }}<template v-if="g.pages?.length">（页：{{ g.pages.slice(0, 12).join('、') }}{{ g.pages.length > 12 ? '…' : '' }}）</template></td>
+            <td>{{ g.reason }}<template v-if="g.pages?.length">{{ t('sum.pagesNote', { pages: g.pages.slice(0, 12).join(locale === 'zh' ? '、' : ', ') + (g.pages.length > 12 ? '…' : '') }) }}</template></td>
           </tr>
         </tbody>
       </table>
       <div v-if="disabledRules.length" class="disabled">
-        当前预设未启用的检查：{{ disabledRules.map((r) => `${r.ruleId} ${r.title}`).join('、') }}（此检查未启用）
+        {{ t('sum.disabled', { list: disabledRules.map((r) => `${r.ruleId} ${tx(r.title)}`).join(locale === 'zh' ? '、' : ', ') }) }}
       </div>
     </details>
   </section>

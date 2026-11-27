@@ -6,24 +6,26 @@ import { SEVERITY_LABEL } from '@/domain/labels'
 import { ruleTitle } from '@/rules/engine'
 import { getPreset } from '@/presets'
 import { visibleText } from '@/utils/safe-text'
+import { useI18n } from '@/i18n'
+import { presetName } from '@/presets'
 
 const props = defineProps<{ cmp: Comparison; docLabels: Record<string, string> }>()
 const emit = defineEmits<{ filter: [tag: CompareTag | 'reopened']; dismiss: [] }>()
+const { t, tx, locale } = useI18n()
 
 const when = computed(() => {
   const d = new Date(props.cmp.previousAt)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale.value === 'zh' ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' })
 })
 const total = computed(() => props.cmp.fixed.length + props.cmp.remaining.length)
 const pct = computed(() => (total.value ? Math.round((props.cmp.fixed.length / total.value) * 100) : 0))
 const prevPreset = computed(() => {
-  const p = getPreset(props.cmp.previousPreset)
-  return `${p.venue}${p.year ? ` ${p.year}` : ''}`
+  return presetName(getPreset(props.cmp.previousPreset), locale.value)
 })
 
 function where(f: Comparison['fixed'][number]) {
   const doc = props.docLabels[f.documentId] ?? f.documentId
-  return f.page == null ? `${doc} · 文档级` : `${doc} · 第 ${f.page} 页`
+  return f.page == null ? t('cmp.docLevel', { doc }) : t('cmp.page', { doc, page: f.page })
 }
 function hit(f: Comparison['fixed'][number]) {
   const t = f.matchInSnippet ? f.snippet.slice(f.matchInSnippet[0], f.matchInSnippet[1]) : (f.linkTarget ?? f.snippet)
@@ -33,44 +35,44 @@ function hit(f: Comparison['fixed'][number]) {
 </script>
 
 <template>
-  <section class="cmp" aria-label="与上一版对比" data-testid="compare-panel">
+  <section class="cmp" :aria-label="t('cmp.aria')" data-testid="compare-panel">
     <header>
-      <h3>与上一版对比 <span class="muted">· 上一版检查于 {{ when }}</span></h3>
-      <n-button text size="tiny" @click="emit('dismiss')">关闭对比</n-button>
+      <h3>{{ t('cmp.title') }} <span class="muted">{{ t('cmp.when', { t: when }) }}</span></h3>
+      <n-button text size="tiny" @click="emit('dismiss')">{{ t('cmp.close') }}</n-button>
     </header>
 
-    <div class="bar" :aria-label="`修复进度 ${pct}%`">
+    <div class="bar" :aria-label="t('cmp.progress', { pct })">
       <span class="seg fixed" :style="{ flexGrow: cmp.fixed.length }" />
       <span class="seg remaining" :style="{ flexGrow: cmp.remaining.length }" />
     </div>
 
     <div class="stats">
       <div class="stat fixed" data-testid="cmp-fixed">
-        <b>{{ cmp.fixed.length }}</b><span>已修复</span>
+        <b>{{ cmp.fixed.length }}</b><span>{{ t('cmp.fixed') }}</span>
       </div>
       <button type="button" class="stat remaining" data-testid="cmp-remaining" @click="emit('filter', 'remaining')">
-        <b>{{ cmp.remaining.length }}</b><span>仍存在</span>
+        <b>{{ cmp.remaining.length }}</b><span>{{ t('cmp.remaining') }}</span>
       </button>
       <button type="button" class="stat added" data-testid="cmp-added" @click="emit('filter', 'added')">
-        <b>{{ cmp.added.length }}</b><span>新增</span>
+        <b>{{ cmp.added.length }}</b><span>{{ t('cmp.added') }}</span>
       </button>
     </div>
 
     <div v-if="cmp.reopened.length" class="warn">
-      你在上一版标记为“已在源文件中修改”的 {{ cmp.reopened.length }} 条，在新版本里仍然存在，已恢复为待处理。
-      <n-button text size="tiny" type="primary" @click="emit('filter', 'reopened')">查看</n-button>
+      {{ t('cmp.reopened', { n: cmp.reopened.length }) }}
+      <n-button text size="tiny" type="primary" @click="emit('filter', 'reopened')">{{ t('cmp.view') }}</n-button>
     </div>
-    <div v-if="cmp.presetChanged" class="note">两次检查使用的会场预设不同（上一版：{{ prevPreset }}），部分差异可能来自预设而不是修改。</div>
+    <div v-if="cmp.presetChanged" class="note">{{ t('cmp.presetChanged', { p: prevPreset }) }}</div>
     <div v-if="cmp.remaining.length === 0 && cmp.fixed.length === 0 && cmp.added.length > 0" class="note">
-      两个版本几乎没有共同的发现——如果这不是同一篇论文的新版本，可以关闭对比。
+      {{ t('cmp.different') }}
     </div>
 
     <details v-if="cmp.fixed.length" class="fixed-list">
-      <summary>已修复的 {{ cmp.fixed.length }} 条</summary>
+      <summary>{{ t('cmp.fixedList', { n: cmp.fixed.length }) }}</summary>
       <ul>
         <li v-for="f in cmp.fixed" :key="f.id">
-          <span class="sev" :class="f.severity">{{ SEVERITY_LABEL[f.severity] }}</span>
-          <span class="t">{{ ruleTitle(f.ruleId) }}</span>
+          <span class="sev" :class="f.severity">{{ tx(SEVERITY_LABEL[f.severity]) }}</span>
+          <span class="t">{{ tx(ruleTitle(f.ruleId)) }}</span>
           <span class="w">{{ where(f) }}</span>
           <s class="h">{{ hit(f) }}</s>
         </li>

@@ -3,6 +3,7 @@
  * 只是规则设置，不含任何稿件内容；保存在本机 localStorage，可导出 / 导入 JSON 与合作者共享。
  */
 import type { AckPolicy, Severity, VenuePreset } from '@/domain/types'
+import { L, same, type Text } from '@/domain/text'
 
 export interface CustomPresetSpec {
   id: string
@@ -22,10 +23,10 @@ const MAX_PRESETS = 30
 const ACK: AckPolicy[] = ['forbidden', 'aiDisclosureOnly', 'noIdentity']
 const LEVELS = new Set(['high', 'medium', 'info', 'off'])
 
-export const ACK_LABEL: Record<AckPolicy, string> = {
-  forbidden: '投稿版不得包含致谢',
-  aiDisclosureOnly: '只允许 AI 使用说明',
-  noIdentity: '可以有致谢，但不得含身份信息',
+export const ACK_LABEL: Record<AckPolicy, Text> = {
+  forbidden: L('投稿版不得包含致谢', 'No acknowledgments in the submission'),
+  aiDisclosureOnly: L('只允许 AI 使用说明', 'Only an AI-use disclosure is allowed'),
+  noIdentity: L('可以有致谢，但不得含身份信息', 'Acknowledgments allowed, but nothing identifying'),
 }
 
 export function newCustomId(): string {
@@ -80,28 +81,36 @@ export function toPreset(spec: CustomPresetSpec, base: VenuePreset): VenuePreset
   return {
     ...base,
     id: spec.id,
-    venue: spec.venue,
+    venue: same(spec.venue),
     year: null,
     version: 'custom',
     verifiedAt: null,
     verificationStatus: 'unverified',
     implementationStatus: 'implemented',
     summary: [
-      ...(spec.note ? [spec.note] : []),
-      `基于“${base.venue}${base.year ? ` ${base.year}` : ''}”。致谢：${ACK_LABEL[spec.ackPolicy]}。`,
-      changed ? `调整了 ${changed} 条规则${disabled.length ? `（停用 ${disabled.join('、')}）` : ''}。` : '规则级别与基础预设相同。',
-      ...(spec.flagAllEmbeddedLinks ? ['所有可点击外链都列为待确认项。'] : []),
+      ...(spec.note ? [same(spec.note)] : []),
+      L(
+        `基于“${base.venue.zh}${base.year ? ` ${base.year}` : ''}”。致谢：${ACK_LABEL[spec.ackPolicy].zh}。`,
+        `Based on “${base.venue.en}${base.year ? ` ${base.year}` : ''}”. Acknowledgments: ${ACK_LABEL[spec.ackPolicy].en}.`,
+      ),
+      changed
+        ? L(
+            `调整了 ${changed} 条规则${disabled.length ? `（停用 ${disabled.join('、')}）` : ''}。`,
+            `${changed} rule(s) adjusted${disabled.length ? ` (disabled: ${disabled.join(', ')})` : ''}.`,
+          )
+        : L('规则级别与基础预设相同。', 'Rule levels are the same as the base preset.'),
+      ...(spec.flagAllEmbeddedLinks ? [L('所有可点击外链都列为待确认项。', 'Every clickable external link is listed for review.')] : []),
     ],
     sources: [],
     ackPolicy: spec.ackPolicy,
     flagAllEmbeddedLinks: spec.flagAllEmbeddedLinks,
-    linkNote: spec.flagAllEmbeddedLinks ? '该自定义预设把所有内嵌外部链接列为待确认项。' : null,
+    linkNote: spec.flagAllEmbeddedLinks ? L('该自定义预设把所有内嵌外部链接列为待确认项。', 'This custom preset lists every embedded external link for review.') : null,
     disabledRuleIds: [...new Set([...base.disabledRuleIds, ...disabled])],
     severityOverrides: overrides,
-    limitations: [...base.limitations, '这是你自己定义的预设，条款内容没有经过核验。'],
+    limitations: [...base.limitations, L('这是你自己定义的预设，条款内容没有经过核验。', 'This is your own preset; its policy content has not been verified.')],
     // 没有自己的模板标记时沿用基础预设的；要关掉这项检查，把 R21 设为停用
     templateMarker: spec.templateMarker
-      ? { ...spec.templateMarker, suggestion: '确认使用了会场模板的审稿（匿名）模式。' }
+      ? { ...spec.templateMarker, suggestion: L('确认使用了会场模板的审稿（匿名）模式。', 'Make sure the venue template is in review (anonymous) mode.') }
       : (base.templateMarker ?? null),
     custom: true,
   }

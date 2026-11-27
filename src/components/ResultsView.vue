@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { NButton, NSelect, useMessage } from 'naive-ui'
 import type { FindingCategory, ReviewStatus, ScanResult, Severity } from '@/domain/types'
-import { REVIEW_LABEL, isDismissed } from '@/domain/labels'
+import { DOC_LABEL, REVIEW_LABEL, isDismissed } from '@/domain/labels'
 import { SLOT_LABEL, type SlotId, useSession } from '@/app/session'
 import ResultsSummary from './ResultsSummary.vue'
 import FindingList from './FindingList.vue'
@@ -12,11 +12,14 @@ import CleanDialog from './CleanDialog.vue'
 import ComparePanel from './ComparePanel.vue'
 import ChecklistPanel from './ChecklistPanel.vue'
 import type { CompareTag } from '@/app/compare'
+import { useI18n } from '@/i18n'
+import { presetName } from '@/presets'
 
 const props = defineProps<{ result: ScanResult }>()
 const emit = defineEmits<{ help: [tab: string] }>()
 const s = useSession()
 const message = useMessage()
+const { t, tx, locale } = useI18n()
 const list = ref<InstanceType<typeof FindingList> | null>(null)
 const viewer = ref<InstanceType<typeof PdfViewer> | null>(null)
 const showExport = ref(false)
@@ -32,8 +35,8 @@ async function onNewVersion(e: Event) {
   el.value = ''
   if (!f) return
   await s.rescanWith('main', f)
-  if (s.state.selectionError) message.warning(s.state.selectionError)
-  else if (s.state.phase === 'error' && s.state.error) message.error(s.state.error)
+  if (s.state.selectionError) message.warning(tx(s.state.selectionError))
+  else if (s.state.phase === 'error' && s.state.error) message.error(tx(s.state.error))
 }
 function enableOcr() {
   s.setOcr(true)
@@ -46,10 +49,14 @@ function onCompareFilter(tag: CompareTag | 'reopened') {
 const mobileTab = ref<'findings' | 'page'>('findings')
 
 /** 界面上的文件标签不用文件名，避免截图或录屏时泄露 */
-const pdfLabels = computed(() => Object.fromEntries(props.result.documents.map((d) => [d.id, SLOT_LABEL[d.id as SlotId] ?? d.id])))
-const docLabels = computed(() => (props.result.source ? { ...pdfLabels.value, src: '源文件包' } : pdfLabels.value))
+const pdfLabels = computed<Record<string, string>>(() =>
+  Object.fromEntries(props.result.documents.map((d) => [d.id, SLOT_LABEL[d.id as SlotId] ? tx(SLOT_LABEL[d.id as SlotId]) : d.id])),
+)
+const docLabels = computed<Record<string, string>>(() => (props.result.source ? { ...pdfLabels.value, src: tx(DOC_LABEL.src) } : pdfLabels.value))
 
-const presetOptions = computed(() => s.presetList.value.map((p) => ({ value: p.id, label: `${p.venue}${p.year ? ` ${p.year}` : ''}${p.custom ? '（自定义）' : ''}` })))
+const presetOptions = computed(() =>
+  s.presetList.value.map((p) => ({ value: p.id, label: `${presetName(p, locale.value)}${p.custom ? t('results.customSuffix') : ''}` })),
+)
 
 function changePreset(id: string) {
   s.setPreset(id)
@@ -105,7 +112,7 @@ function mark(status: ReviewStatus) {
   const i = ids.indexOf(id)
   const after = ids[i + 1] ?? ids[i - 1] ?? null
   s.setDecision(id, status)
-  message.info(`已标记：${status === 'open' ? '待处理' : REVIEW_LABEL[status]}`, { duration: 1400 })
+  message.info(t('results.marked', { status: status === 'open' ? t('results.open') : tx(REVIEW_LABEL[status]) }), { duration: 1400 })
   const still = list.value?.visibleIds() ?? []
   if (!still.includes(id) && after) s.state.selectedFindingId = after
 }
@@ -187,29 +194,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="results">
     <div class="bar">
       <div class="bar-left">
-        <n-button size="small" data-testid="back-to-import" @click="s.state.view = 'import'">← 文件与设置</n-button>
+        <n-button size="small" data-testid="back-to-import" @click="s.state.view = 'import'">{{ t('results.back') }}</n-button>
         <n-select
           size="small"
           class="preset"
           :value="s.state.presetId"
           :options="presetOptions"
           :disabled="s.busy.value"
-          aria-label="切换会场预设并重新检查"
+          :aria-label="t('results.presetAria')"
           @update:value="changePreset"
         />
-        <span v-if="s.busy.value" class="muted">正在重新检查…</span>
+        <span v-if="s.busy.value" class="muted">{{ t('results.rechecking') }}</span>
       </div>
       <div class="bar-right">
         <input ref="newVersion" type="file" accept="application/pdf,.pdf" hidden data-testid="new-version-input" @change="onNewVersion" />
-        <n-button size="small" :disabled="s.busy.value" title="选择修改后的主稿，重新检查并与当前结果对比" data-testid="new-version" @click="pickNewVersion">上传新版本</n-button>
-        <n-button size="small" :disabled="s.busy.value" data-testid="open-clean" @click="showClean = true">清理 PDF</n-button>
-        <n-button size="small" :disabled="s.busy.value" @click="s.start()">重新检查</n-button>
-        <n-button size="small" type="primary" data-testid="open-export" @click="showExport = true">导出报告</n-button>
+        <n-button size="small" :disabled="s.busy.value" :title="t('results.newVersionTip')" data-testid="new-version" @click="pickNewVersion">{{ t('results.newVersion') }}</n-button>
+        <n-button size="small" :disabled="s.busy.value" data-testid="open-clean" @click="showClean = true">{{ t('results.clean') }}</n-button>
+        <n-button size="small" :disabled="s.busy.value" @click="s.start()">{{ t('results.recheck') }}</n-button>
+        <n-button size="small" type="primary" data-testid="open-export" @click="showExport = true">{{ t('results.export') }}</n-button>
       </div>
     </div>
     <div class="tabs" role="tablist">
-      <button role="tab" :aria-selected="mobileTab === 'findings'" :class="{ on: mobileTab === 'findings' }" @click="mobileTab = 'findings'">发现</button>
-      <button role="tab" :aria-selected="mobileTab === 'page'" :class="{ on: mobileTab === 'page' }" @click="mobileTab = 'page'">原页</button>
+      <button role="tab" :aria-selected="mobileTab === 'findings'" :class="{ on: mobileTab === 'findings' }" @click="mobileTab = 'findings'">{{ t('results.tabFindings') }}</button>
+      <button role="tab" :aria-selected="mobileTab === 'page'" :class="{ on: mobileTab === 'page' }" @click="mobileTab = 'page'">{{ t('results.tabPage') }}</button>
     </div>
     <div class="cols" :class="`show-${mobileTab}`">
       <div class="left">

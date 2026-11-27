@@ -93,7 +93,7 @@ describe('默认导出（脱敏 + 隐藏文件名）', () => {
 
 describe('报告不携带稿件本身', () => {
   test('不含 PDF 字节、整页文字或自定义词清单', () => {
-    for (const opts of [DEFAULT_REPORT_OPTIONS, { redactEvidence: false, hideFilenames: false, includeDismissed: true }]) {
+    for (const opts of [DEFAULT_REPORT_OPTIONS, { redactEvidence: false, hideFilenames: false, includeDismissed: true, locale: 'zh' as const }]) {
       const r = build(opts)
       const json = reportJson(r)
       expect(json).not.toContain('%PDF')
@@ -114,7 +114,7 @@ describe('报告不携带稿件本身', () => {
   })
 
   test('关闭脱敏时才出现原文', () => {
-    const r = build({ redactEvidence: false, hideFilenames: false, includeDismissed: true })
+    const r = build({ redactEvidence: false, hideFilenames: false, includeDismissed: true, locale: 'zh' as const })
     expect(reportJson(r)).toMatch(/Alex Example/)
     expect(r.documents[0]?.name).toBe('sample-leaky.pdf')
   })
@@ -140,7 +140,7 @@ describe('复核决定', () => {
 
 describe('HTML 报告转义', () => {
   function hostile(): Report {
-    const r = build({ redactEvidence: false, hideFilenames: false, includeDismissed: true })
+    const r = build({ redactEvidence: false, hideFilenames: false, includeDismissed: true, locale: 'zh' as const })
     const f = r.findings[0]!
     f.snippet = '</script><script>alert(1)</script><img src=x onerror=alert(2)>'
     f.reasons = ['"quoted" \'single\' `tick` & <b>bold</b>']

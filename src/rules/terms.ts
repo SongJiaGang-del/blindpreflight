@@ -5,6 +5,7 @@ import type { DocumentFacts, UserTerm } from '@/domain/types'
 import { isCjk, normalizeText } from '@/normalize/unicode'
 import type { DerivedName } from './core'
 import { ANON_PLACEHOLDER, escapeRegExp } from './patterns'
+import { L } from '@/domain/text'
 
 /** 常见英文词（单独作为词条时极易误报） */
 const COMMON_WORDS = new Set([
@@ -91,8 +92,8 @@ export function deriveNames(docs: DocumentFacts[]): DerivedName[] {
       ...Object.entries(doc.info).map(([k, v]): [string, string, string] => [`Info.${k}`, k, v]),
       ...Object.entries(doc.xmp ?? {}).map(([k, v]): [string, string, string] => [`XMP.${k}`, k, v]),
       ...(doc.binary?.oldRevisions ?? []).flatMap((r) => [
-        ...Object.entries(r.info).map(([k, v]): [string, string, string] => [`旧版本 ${r.index} 的 Info.${k}`, k, v]),
-        ...Object.entries(r.xmp ?? {}).map(([k, v]): [string, string, string] => [`旧版本 ${r.index} 的 XMP.${k}`, k, v]),
+        ...Object.entries(r.info).map(([k, v]): [string, string, string] => [`rev${r.index}:Info.${k}`, k, v]),
+        ...Object.entries(r.xmp ?? {}).map(([k, v]): [string, string, string] => [`rev${r.index}:XMP.${k}`, k, v]),
       ]),
     ]
     for (const [field, bare, value] of fields) {
@@ -103,7 +104,14 @@ export function deriveNames(docs: DocumentFacts[]): DerivedName[] {
         if (seen.has(key)) continue
         seen.add(key)
         const tokens = [...name].every((c) => isCjk(c)) ? [name] : name.toLowerCase().split(/\s+/).filter((t) => t.length >= 2)
-        out.push({ raw: name, tokens, source: `${doc.displayName} 的 ${field}` })
+        const rev = /^rev(\d+):(.+)$/.exec(field)
+        out.push({
+          raw: name,
+          tokens,
+          source: rev
+            ? L(`${doc.displayName} 旧版本 ${rev[1]} 的 ${rev[2]}`, `${rev[2]} of earlier revision ${rev[1]} of ${doc.displayName}`)
+            : L(`${doc.displayName} 的 ${field}`, `${field} of ${doc.displayName}`),
+        })
       }
     }
   }

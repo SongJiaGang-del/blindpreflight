@@ -108,7 +108,7 @@ describe('源文件包检查', () => {
     expect(src.meta.find((m) => m.path.endsWith('.jpg'))?.gps).toBe(true)
     expect(src.meta.find((m) => m.path.endsWith('.docx'))?.fields['Office.Creator']).toBe('Blair Sample')
     expect(src.authorNames.sort()).toEqual(['Alex Example', 'Blair Sample'])
-    expect(src.warnings.join()).toMatch(/1 个 PDF/)
+    expect(src.warnings.map((w) => w.zh).join()).toMatch(/1 个 PDF/)
   })
 
   test('R22–R25 都能报出，且各有代表性的发现', async () => {
@@ -116,19 +116,19 @@ describe('源文件包检查', () => {
     const r = runScan([], { presetId: 'generic', userTerms: parseUserTerms(''), strictShortTerms: false, source })
     const r22 = rulesOf(r, 'R22')
     expect(r22.some((f) => f.field === 'paper/main.tex:5' && f.severity === 'high')).toBe(true)
-    expect(r22.some((f) => f.reasons.join().includes('pdfauthor'))).toBe(true)
-    expect(r22.some((f) => f.reasons.join().includes('终稿'))).toBe(true)
+    expect(r22.some((f) => f.reasons.map((r) => r.zh).join().includes('pdfauthor'))).toBe(true)
+    expect(r22.some((f) => f.reasons.map((r) => r.zh).join().includes('终稿'))).toBe(true)
 
     const r23 = rulesOf(r, 'R23')
     // 注释里的邮箱、\iffalse 中的名字、comment 环境里的本机路径
     expect(r23.some((f) => f.field === 'paper/main.tex:8')).toBe(true)
-    expect(r23.some((f) => f.field === 'paper/main.tex:12' && f.reasons.join().includes('iffalse'))).toBe(true)
+    expect(r23.some((f) => f.field === 'paper/main.tex:12' && f.reasons.map((r) => r.zh).join().includes('iffalse'))).toBe(true)
     expect(r23.some((f) => f.field === 'paper/main.tex:15')).toBe(true)
     // 正文里转义的 50\% 那一行不会被当成注释
     expect(r23.some((f) => f.field === 'paper/main.tex:9')).toBe(false)
     expect(r23.some((f) => f.field?.startsWith('code/LICENSE'))).toBe(true)
     expect(r23.some((f) => f.field?.startsWith('code/train.py:1'))).toBe(true)
-    expect(r23.some((f) => f.field?.startsWith('code/train.py:2') && f.reasons.join().includes('aexample'))).toBe(true)
+    expect(r23.some((f) => f.field?.startsWith('code/train.py:2') && f.reasons.map((r) => r.zh).join().includes('aexample'))).toBe(true)
     // .bib 里的第三方作者名不报
     expect(r.findings.some((f) => f.field?.startsWith('paper/refs.bib'))).toBe(false)
     // 命中位置可用于高亮
@@ -163,7 +163,7 @@ describe('源文件包检查', () => {
     const withSrc = runScan([pdf.facts], { presetId: 'generic', userTerms: [], strictShortTerms: false, source })
     const r03 = (r: ScanResult) => rulesOf(r, 'R03').filter((f) => f.documentId === 'main')
     expect(r03(without)).toHaveLength(0)
-    expect(r03(withSrc).some((f) => f.snippet.includes('Alex Example') && f.reasons.join().includes('源文件'))).toBe(true)
+    expect(r03(withSrc).some((f) => f.snippet.includes('Alex Example') && f.reasons.map((r) => r.zh).join().includes('源文件'))).toBe(true)
   })
 
   test('报告：源文件包以“源文件包”出现；对比时忽略行号变化', async () => {

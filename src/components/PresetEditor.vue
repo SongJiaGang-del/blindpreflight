@@ -7,6 +7,8 @@ import { ACK_LABEL, type CustomPresetSpec, newCustomId, validPattern } from '@/p
 import { RULES } from '@/rules/engine'
 import { SEVERITY_LABEL } from '@/domain/labels'
 import { useSession } from '@/app/session'
+import { useI18n } from '@/i18n'
+import { presetName } from '@/presets'
 
 /** 要编辑的自定义预设；null = 新建 */
 const props = defineProps<{ spec: CustomPresetSpec | null }>()
@@ -14,6 +16,7 @@ const show = defineModel<boolean>('show', { required: true })
 const emit = defineEmits<{ saved: [id: string] }>()
 const s = useSession()
 const dialog = useDialog()
+const { t, tx, locale } = useI18n()
 
 type Level = Severity | 'off' | 'default'
 const form = reactive({
@@ -54,18 +57,22 @@ watch(
   },
 )
 
-const baseOptions = PRESETS.map((p) => ({ value: p.id, label: `${p.venue}${p.year ? ` ${p.year}` : ''}` }))
+const baseOptions = computed(() => PRESETS.map((p) => ({ value: p.id, label: presetName(p, locale.value) })))
 const base = computed(() => getBuiltinPreset(form.baseId))
 
 function levelOptions(ruleId: string) {
   const b = base.value
-  const def = b.disabledRuleIds.includes(ruleId) ? '停用' : b.severityOverrides[ruleId] ? SEVERITY_LABEL[b.severityOverrides[ruleId]!] : '按规则判断'
+  const def = b.disabledRuleIds.includes(ruleId)
+    ? t('editor.off')
+    : b.severityOverrides[ruleId]
+      ? tx(SEVERITY_LABEL[b.severityOverrides[ruleId]!])
+      : t('editor.byRule')
   return [
-    { value: 'default', label: `默认（${def}）` },
-    { value: 'high', label: '一律高优先级' },
-    { value: 'medium', label: '一律需核实' },
-    { value: 'info', label: '一律提示' },
-    { value: 'off', label: '停用' },
+    { value: 'default', label: t('editor.default', { def }) },
+    { value: 'high', label: t('editor.allHigh') },
+    { value: 'medium', label: t('editor.allMedium') },
+    { value: 'info', label: t('editor.allInfo') },
+    { value: 'off', label: t('editor.off') },
   ]
 }
 const changedCount = computed(() => Object.values(form.rules).filter((v) => v !== 'default').length)
@@ -96,10 +103,10 @@ function remove() {
   const sp = props.spec
   if (!sp) return
   dialog.warning({
-    title: `删除自定义预设“${sp.venue}”？`,
-    content: '删除后无法恢复。如果当前正在使用它，会切换回“通用双盲”。',
-    positiveText: '删除',
-    negativeText: '取消',
+    title: t('editor.deleteTitle', { name: sp.venue }),
+    content: t('editor.deleteContent'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
     onPositiveClick: () => {
       s.removeCustomPreset(sp.id)
       show.value = false
@@ -112,46 +119,46 @@ function remove() {
   <n-modal
     v-model:show="show"
     preset="card"
-    :title="spec ? `编辑自定义预设` : '新建自定义预设'"
+    :title="spec ? t('editor.titleEdit') : t('editor.titleNew')"
     style="width: min(720px, 96vw)"
     :bordered="false"
     data-testid="preset-editor"
   >
     <div class="body">
       <n-alert type="info" :bordered="false">
-        自定义预设只是规则设置（致谢政策、规则级别、模板标记），保存在本机浏览器里，不含任何稿件内容。可以导出成 JSON 发给合作者。
+        {{ t('editor.intro') }}
       </n-alert>
 
       <div class="row two">
         <label>
-          <span class="lbl">名称</span>
-          <n-input v-model:value="form.venue" maxlength="60" placeholder="例如：某 Workshop 2027" data-testid="preset-name" />
+          <span class="lbl">{{ t('editor.name') }}</span>
+          <n-input v-model:value="form.venue" maxlength="60" :placeholder="t('editor.namePh')" data-testid="preset-name" />
         </label>
         <label>
-          <span class="lbl">基于</span>
+          <span class="lbl">{{ t('editor.base') }}</span>
           <n-select v-model:value="form.baseId" :options="baseOptions" />
         </label>
       </div>
 
       <div class="row">
-        <span class="lbl">致谢政策</span>
+        <span class="lbl">{{ t('editor.ack') }}</span>
         <n-radio-group v-model:value="form.ackPolicy" name="ack" @update:value="touched = true">
-          <n-radio v-for="(label, k) in ACK_LABEL" :key="k" :value="k">{{ label }}</n-radio>
+          <n-radio v-for="(label, k) in ACK_LABEL" :key="k" :value="k">{{ tx(label) }}</n-radio>
         </n-radio-group>
       </div>
 
       <div class="row inline">
         <n-switch v-model:value="form.flagAllEmbeddedLinks" @update:value="touched = true" />
-        <span>把所有可点击外链都列为待确认项（适用于禁止外链的会场）</span>
+        <span>{{ t('editor.flagLinks') }}</span>
       </div>
 
       <details class="rules" :open="changedCount > 0">
-        <summary>规则级别 <span class="muted">（已调整 {{ changedCount }} 条）</span></summary>
+        <summary>{{ t('editor.rules') }} <span class="muted">{{ t('editor.rulesChanged', { n: changedCount }) }}</span></summary>
         <table>
           <tbody>
             <tr v-for="r in RULES" :key="r.id">
               <td class="id">{{ r.id }}</td>
-              <td class="t">{{ r.title }}</td>
+              <td class="t">{{ tx(r.title) }}</td>
               <td class="sel">
                 <n-select v-model:value="form.rules[r.id]" size="small" :options="levelOptions(r.id)" :consistent-menu-width="false" />
               </td>
@@ -161,26 +168,26 @@ function remove() {
       </details>
 
       <div class="row">
-        <span class="lbl">审稿模板标记 <span class="muted">（可选，正则，忽略大小写；前两页找不到时提示）</span></span>
+        <span class="lbl">{{ t('editor.marker') }} <span class="muted">{{ t('editor.markerNote') }}</span></span>
         <div class="two">
-          <n-input v-model:value="form.markerPattern" placeholder="例如：Anonymous\s+Submission" :status="patternOk ? undefined : 'error'" />
-          <n-input v-model:value="form.markerLabel" placeholder="说明文字，例如：Anonymous Submission" />
+          <n-input v-model:value="form.markerPattern" :placeholder="t('editor.markerPh')" :status="patternOk ? undefined : 'error'" />
+          <n-input v-model:value="form.markerLabel" :placeholder="t('editor.markerLabelPh')" />
         </div>
-        <span v-if="!patternOk" class="err">正则无效。</span>
-        <span v-else-if="!form.markerPattern && base.templateMarker" class="muted">留空则沿用“{{ base.venue }}”的标记：{{ base.templateMarker.label }}。</span>
+        <span v-if="!patternOk" class="err">{{ t('editor.badRegex') }}</span>
+        <span v-else-if="!form.markerPattern && base.templateMarker" class="muted">{{ t('editor.inherit', { venue: tx(base.venue), label: base.templateMarker.label }) }}</span>
       </div>
 
       <label class="row">
-        <span class="lbl">备注 <span class="muted">（会显示在预设卡片上，例如政策要点或来源）</span></span>
+        <span class="lbl">{{ t('editor.note') }} <span class="muted">{{ t('editor.noteHelp') }}</span></span>
         <n-input v-model:value="form.note" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" maxlength="300" />
       </label>
     </div>
     <template #footer>
       <div class="foot">
-        <n-button v-if="spec" type="error" quaternary @click="remove">删除</n-button>
+        <n-button v-if="spec" type="error" quaternary @click="remove">{{ t('common.delete') }}</n-button>
         <span class="grow" />
-        <n-button @click="show = false">取消</n-button>
-        <n-button type="primary" :disabled="!canSave" data-testid="preset-save" @click="save">保存</n-button>
+        <n-button @click="show = false">{{ t('common.cancel') }}</n-button>
+        <n-button type="primary" :disabled="!canSave" data-testid="preset-save" @click="save">{{ t('common.save') }}</n-button>
       </div>
     </template>
   </n-modal>

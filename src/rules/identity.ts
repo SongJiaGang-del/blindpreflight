@@ -14,6 +14,7 @@ import {
   freshRegex,
 } from './patterns'
 import { isAnonymousPlaceholder, localPartMatchesName, termRegex } from './terms'
+import { L, LIST_SEP, type Text, join } from '@/domain/text'
 
 // ---------------------------------------------------------------------------
 // R01 元数据
@@ -26,17 +27,23 @@ const DATE_KEY = /^(?:CreationDate|ModDate|xmp:createdate|xmp:modifydate|xmp:met
 const DESCRIPTIVE_KEY = /^(?:Title|Subject|Keywords|dc:title|dc:description|dc:subject|pdf:keywords)$/i
 const XMP_IGNORED = /^(?:xmpmm:|pdfx:ptex\.fullbanner|xmp:)/i
 
-export function identityTokens(value: string, ctx: RuleContext): string[] {
-  const out: string[] = []
+/** 一个值里的身份线索（双语）；userTerm 标记命中了用户输入的自定义词 */
+export type IdentityToken = Text & { userTerm?: boolean }
+
+export function identityTokens(value: string, ctx: RuleContext): IdentityToken[] {
+  const out: IdentityToken[] = []
   const v = normalizeText(value)
-  if (freshRegex(EMAIL).test(v)) out.push('含邮箱')
-  if (freshRegex(INSTITUTION).test(v)) out.push('含机构词')
-  for (const t of ctx.userTerms) if (!t.ambiguous && termRegex(t.normalized).test(v)) out.push(`含自定义词「${t.raw}」`)
-  for (const n of ctx.derivedNames) if (termRegex(n.raw).test(v)) out.push(`含作者名「${n.raw}」`)
-  if (LOCAL_PATH.test(v)) out.push('含本地用户路径')
+  if (freshRegex(EMAIL).test(v)) out.push(L('含邮箱', 'contains an email address'))
+  if (freshRegex(INSTITUTION).test(v)) out.push(L('含机构词', 'contains an institution word'))
+  for (const t of ctx.userTerms)
+    if (!t.ambiguous && termRegex(t.normalized).test(v)) out.push({ ...L(`含自定义词「${t.raw}」`, `contains your term “${t.raw}”`), userTerm: true })
+  for (const n of ctx.derivedNames) if (termRegex(n.raw).test(v)) out.push(L(`含作者名「${n.raw}」`, `contains the author name “${n.raw}”`))
+  if (LOCAL_PATH.test(v)) out.push(L('含本地用户路径', 'contains a local user path'))
   LOCAL_PATH.lastIndex = 0
   return out
 }
+
+export const hasUserTerm = (tokens: IdentityToken[]) => tokens.some((t) => t.userTerm)
 
 export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] {
   const out: FindingDraft[] = []
@@ -60,8 +67,16 @@ export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft
           ...base,
           severity: 'high',
           confidence: 'high',
-          reasons: [`${group === 'Info' ? 'PDF Info 字典' : 'XMP 元数据'}的作者字段非空且不是匿名占位符。`, ...tokens],
-          suggestion: '在 LaTeX 中用 \\hypersetup{pdfauthor={}} 或导出设置清空作者；Word 用「检查文档 → 删除文档属性」。清理后重新导出并再检查一次。',
+          reasons: [
+            group === 'Info'
+              ? L('PDF Info 字典的作者字段非空且不是匿名占位符。', 'The PDF Info author field is set and is not an anonymous placeholder.')
+              : L('XMP 元数据的作者字段非空且不是匿名占位符。', 'The XMP author field is set and is not an anonymous placeholder.'),
+            ...tokens,
+          ],
+          suggestion: L(
+            '在 LaTeX 中用 \\hypersetup{pdfauthor={}} 或导出设置清空作者；Word 用「检查文档 → 删除文档属性」。清理后重新导出并再检查一次。',
+            'In LaTeX clear it with \\hypersetup{pdfauthor={}} or your export settings; in Word use “Inspect Document → Remove document properties”. Export again and re-check.',
+          ),
         })
         continue
       }
@@ -71,8 +86,8 @@ export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft
             ...base,
             severity: 'medium',
             confidence: 'medium',
-            reasons: ['生成软件字段里出现了可能识别身份的内容：' + tokens.join('、')],
-            suggestion: '清空或改写该字段后重新导出。',
+            reasons: [join([L('生成软件字段里出现了可能识别身份的内容：', 'The producer / creator field contains something identifying: '), join(tokens, LIST_SEP)])],
+            suggestion: L('清空或改写该字段后重新导出。', 'Clear or rewrite the field and export again.'),
           })
         } else software.push(`${field}=${value}`)
         continue
@@ -83,8 +98,11 @@ export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft
           ...base,
           severity: tokens.length ? 'high' : 'medium',
           confidence: tokens.length ? 'high' : 'medium',
-          reasons: ['PDF 带有自定义元数据字段，常由模板或机构流程写入。', ...tokens],
-          suggestion: '删除自定义文档属性（Acrobat：文件 → 属性 → 自定义；或用 exiftool/qpdf 清理）后重新检查。',
+          reasons: [L('PDF 带有自定义元数据字段，常由模板或机构流程写入。', 'The PDF has custom metadata fields, often written by templates or institutional workflows.'), ...tokens],
+          suggestion: L(
+            '删除自定义文档属性（Acrobat：文件 → 属性 → 自定义；或用 exiftool/qpdf 清理）后重新检查。',
+            'Remove the custom document properties (Acrobat: File → Properties → Custom, or clean with exiftool / qpdf) and re-check.',
+          ),
         })
         continue
       }
@@ -94,8 +112,8 @@ export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft
           ...base,
           severity: 'high',
           confidence: 'medium',
-          reasons: [`元数据字段 ${field} 中：` + tokens.join('、')],
-          suggestion: '清空或改写该字段后重新导出。',
+          reasons: [join([L(`元数据字段 ${field} 中：`, `Metadata field ${field}: `), join(tokens, LIST_SEP)])],
+          suggestion: L('清空或改写该字段后重新导出。', 'Clear or rewrite the field and export again.'),
         })
       }
     }
@@ -111,8 +129,8 @@ export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft
       pageNumber: null,
       zone: null,
       snippet: software.join('；'),
-      reasons: ['生成软件与时间字段通常不识别作者（如 LaTeX、pdfTeX），仅供知悉。'],
-      suggestion: '一般无需处理；若字段中含机构内部工具名或主机名，再考虑清理。',
+      reasons: [L('生成软件与时间字段通常不识别作者（如 LaTeX、pdfTeX），仅供知悉。', 'Producer and date fields usually do not identify authors (e.g. LaTeX, pdfTeX); listed for your information.')],
+      suggestion: L('一般无需处理；若字段中含机构内部工具名或主机名，再考虑清理。', 'Usually nothing to do; clean them if they contain internal tool or host names.'),
     })
   }
   return out
@@ -122,13 +140,21 @@ export function ruleMetadata(doc: DocumentFacts, ctx: RuleContext): FindingDraft
 // R02 邮箱
 // ---------------------------------------------------------------------------
 
-function emailSeverity(zone: Zone, ownName: boolean, exampleDomain: boolean): [Severity, Confidence, string] {
-  if (exampleDomain) return ['info', 'low', 'RFC 2606 示例域名，通常是占位符。']
-  if (zone === 'references') return [ownName ? 'medium' : 'info', 'low', '位于参考文献，可能是他人联系方式；请人工确认。']
+function emailSeverity(zone: Zone, ownName: boolean, exampleDomain: boolean): [Severity, Confidence, Text] {
+  if (exampleDomain) return ['info', 'low', L('RFC 2606 示例域名，通常是占位符。', 'An RFC 2606 example domain, usually a placeholder.')]
+  if (zone === 'references')
+    return [ownName ? 'medium' : 'info', 'low', L('位于参考文献，可能是他人联系方式；请人工确认。', 'In the references; may be someone else’s contact. Please check.')]
   if (zone === 'authorBlock' || zone === 'header' || zone === 'footer' || zone === 'acknowledgments')
-    return ['high', 'high', `位于${ZONE_LABEL[zone]}，几乎必然是作者联系方式。`]
-  if (ownName) return ['high', 'high', '邮箱用户名与元数据或自定义词条中的姓名一致。']
-  return ['medium', 'medium', `位于${ZONE_LABEL[zone]}；可能是作者通讯邮箱，也可能是数据集/工具联系人。`]
+    return ['high', 'high', L(`位于${ZONE_LABEL[zone].zh}，几乎必然是作者联系方式。`, `In the ${ZONE_LABEL[zone].en}; almost certainly an author contact.`)]
+  if (ownName) return ['high', 'high', L('邮箱用户名与元数据或自定义词条中的姓名一致。', 'The mailbox name matches a name from the metadata or your terms.')]
+  return [
+    'medium',
+    'medium',
+    L(
+      `位于${ZONE_LABEL[zone].zh}；可能是作者通讯邮箱，也可能是数据集/工具联系人。`,
+      `In the ${ZONE_LABEL[zone].en}; could be an author contact or a dataset / tool contact.`,
+    ),
+  ]
 }
 
 export function ruleEmail(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] {
@@ -137,7 +163,10 @@ export function ruleEmail(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] 
     ...ctx.derivedNames,
     ...ctx.userTerms.filter((t) => !t.ambiguous).map((t) => ({ tokens: t.normalized.toLowerCase().split(/\s+/) })),
   ]
-  const suggestion = '删除或替换为匿名表述（如 “anonymous@submission”），并检查同一邮箱是否也出现在元数据、页脚或补充材料中。'
+  const suggestion = L(
+    '删除或替换为匿名表述（如 “anonymous@submission”），并检查同一邮箱是否也出现在元数据、页脚或补充材料中。',
+    'Remove it or replace it with an anonymous form (e.g. “anonymous@submission”), and check whether the same address appears in metadata, footers or supplements.',
+  )
 
   const grouped = scanDoc(doc, GROUPED_EMAIL)
   for (const hit of grouped) {
@@ -152,7 +181,7 @@ export function ruleEmail(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] 
       severity,
       confidence,
       text: hit,
-      reasons: [`分组邮箱写法，展开为 ${locals.length} 个地址（@${domain}）。`, why],
+      reasons: [L(`分组邮箱写法，展开为 ${locals.length} 个地址（@${domain}）。`, `Grouped email notation expanding to ${locals.length} addresses (@${domain}).`), why],
       suggestion,
     })
   }
@@ -163,9 +192,10 @@ export function ruleEmail(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] 
     const [local = '', domain = ''] = addr.split('@')
     const own = localPartMatchesName(local, names)
     const [severity, confidence, why] = emailSeverity(zoneOf(hit), own, EXAMPLE_DOMAIN.test(domain))
-    const reasons = [why]
+    const reasons: Text[] = [why]
     const view = hit.viewText.slice(hit.viewStart, hit.viewEnd)
-    if (!hit.page.text.slice(hit.start, hit.end).includes(view)) reasons.push('该邮箱在版面上被拆成多行或多段，已拼接识别。')
+    if (!hit.page.text.slice(hit.start, hit.end).includes(view))
+      reasons.push(L('该邮箱在版面上被拆成多行或多段，已拼接识别。', 'The address is split across lines or text runs; it was joined to detect it.'))
     out.push({ ruleId: 'R02', category: 'email', source: 'text', severity, confidence, text: hit, reasons, suggestion })
   }
 
@@ -187,8 +217,8 @@ export function ruleEmail(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] 
         linkTarget: a.url,
         visibleText: a.visibleText || null,
         key: a.id,
-        reasons: ['PDF 中有 mailto: 链接；即使页面上看不到邮箱，点击也会暴露地址。'],
-        suggestion: '删除该链接（LaTeX 中检查 \\href{mailto:…} 与 hyperref 设置）。',
+        reasons: [L('PDF 中有 mailto: 链接；即使页面上看不到邮箱，点击也会暴露地址。', 'The PDF has a mailto: link; clicking it reveals the address even if it is not visible on the page.')],
+        suggestion: L('删除该链接（LaTeX 中检查 \\href{mailto:…} 与 hyperref 设置）。', 'Remove the link (in LaTeX check \\href{mailto:…} and the hyperref settings).'),
       })
     }
   }
@@ -235,24 +265,39 @@ function termSeverity(zone: Zone, ambiguous: boolean, strict: boolean): [Severit
 
 export function ruleUserTerms(doc: DocumentFacts, ctx: RuleContext): FindingDraft[] {
   const out: FindingDraft[] = []
-  const terms: Array<{ label: string; normalized: string; ambiguous: boolean; user: boolean; source: string }> = [
-    ...ctx.userTerms.map((t) => ({ label: t.raw, normalized: t.normalized, ambiguous: t.ambiguous, user: true, source: '你输入的自定义词条' })),
+  const terms: Array<{ label: string; normalized: string; ambiguous: boolean; user: boolean; source: Text }> = [
+    ...ctx.userTerms.map((t) => ({ label: t.raw, normalized: t.normalized, ambiguous: t.ambiguous, user: true, source: L('你输入的自定义词条', 'your custom terms') })),
     ...ctx.derivedNames
       .filter((n) => !ctx.userTerms.some((t) => t.normalized.toLowerCase() === n.raw.toLowerCase()))
-      .map((n) => ({ label: n.raw, normalized: n.raw, ambiguous: false, user: false, source: `元数据作者（${n.source}）` })),
+      .map((n) => ({
+        label: n.raw,
+        normalized: n.raw,
+        ambiguous: false,
+        user: false,
+        source: L(`元数据作者（${n.source.zh}）`, `metadata author (${n.source.en})`),
+      })),
   ]
   for (const term of terms) {
     for (const hit of scanDoc(doc, termRegex(term.normalized))) {
       const zone = zoneOf(hit)
       const [severity, confidence] = termSeverity(zone, term.ambiguous, ctx.strictShortTerms)
-      const reasons = [`匹配「${term.label}」，来源：${term.source}；位于${ZONE_LABEL[zone]}。`]
-      if (zone === 'references') reasons.push('参考文献中以第三人称引用自己的工作通常是允许的；请确认引用方式不暴露作者关系。')
+      const reasons: Text[] = [
+        L(`匹配「${term.label}」，来源：${term.source.zh}；位于${ZONE_LABEL[zone].zh}。`, `Matches “${term.label}” (from ${term.source.en}); in the ${ZONE_LABEL[zone].en}.`),
+      ]
+      if (zone === 'references')
+        reasons.push(
+          L(
+            '参考文献中以第三人称引用自己的工作通常是允许的；请确认引用方式不暴露作者关系。',
+            'Citing your own work in the third person in the references is usually allowed; make sure the wording does not reveal authorship.',
+          ),
+        )
       else if (zone === 'body' || zone === 'appendix') {
         const { post } = around(hit, 0, 12)
         if (/^\s*(?:et\s+al\.|and\s+\p{Lu}|\[\d)/u.test(post))
-          reasons.push('看起来是第三人称引用（如 “X et al. [n]”），一般可以保留。')
+          reasons.push(L('看起来是第三人称引用（如 “X et al. [n]”），一般可以保留。', 'Looks like a third-person citation (e.g. “X et al. [n]”); usually fine to keep.'))
       }
-      if (term.ambiguous && !ctx.strictShortTerms) reasons.push('词条较短或较常见，已降低优先级；可在设置里开启「严格短词」。')
+      if (term.ambiguous && !ctx.strictShortTerms)
+        reasons.push(L('词条较短或较常见，已降低优先级；可在设置里开启「严格短词」。', 'The term is short or common, so it was demoted; enable strict short terms to change this.'))
       out.push({
         ruleId: 'R03',
         category: 'userTerm',
@@ -264,8 +309,11 @@ export function ruleUserTerms(doc: DocumentFacts, ctx: RuleContext): FindingDraf
         matchedUserTerm: term.user,
         suggestion:
           zone === 'references'
-            ? '保留第三人称引用；确认正文没有 “our previous work [n]” 之类把该文献与作者关联的措辞。'
-            : '删除或改为匿名表述；如需引用自己的工作，使用第三人称。',
+            ? L(
+                '保留第三人称引用；确认正文没有 “our previous work [n]” 之类把该文献与作者关联的措辞。',
+                'Keep third-person citations; make sure the text has no “our previous work [n]” wording linking it to the authors.',
+              )
+            : L('删除或改为匿名表述；如需引用自己的工作，使用第三人称。', 'Remove or anonymize it; cite your own work in the third person.'),
       })
     }
   }
@@ -365,19 +413,22 @@ export function ruleInstitution(doc: DocumentFacts, ctx: RuleContext): FindingDr
       if (zone === 'references') continue
       let severity: Severity
       let confidence: Confidence
-      let why: string
+      let why: Text
       if (zone === 'authorBlock' || zone === 'header' || zone === 'footer') {
         severity = 'high'
         confidence = 'high'
-        why = `机构名称位于${ZONE_LABEL[zone]}，通常是作者单位。`
+        why = L(`机构名称位于${ZONE_LABEL[zone].zh}，通常是作者单位。`, `An institution name in the ${ZONE_LABEL[zone].en}, usually the authors’ affiliation.`)
       } else if (zone === 'acknowledgments') {
         severity = 'medium'
         confidence = 'medium'
-        why = '机构名称位于致谢，可能暴露作者单位或资助方。'
+        why = L('机构名称位于致谢，可能暴露作者单位或资助方。', 'An institution name in the acknowledgments may reveal the affiliation or a funder.')
       } else {
         severity = 'info'
         confidence = 'low'
-        why = `机构名称位于${ZONE_LABEL[zone]}；可能只是数据集、合作方或第三方，请结合上下文判断。`
+        why = L(
+          `机构名称位于${ZONE_LABEL[zone].zh}；可能只是数据集、合作方或第三方，请结合上下文判断。`,
+          `An institution name in the ${ZONE_LABEL[zone].en}; may just be a dataset, partner or third party — judge from context.`,
+        )
       }
       out.push({
         ruleId: 'R04',
@@ -387,7 +438,13 @@ export function ruleInstitution(doc: DocumentFacts, ctx: RuleContext): FindingDr
         confidence,
         text: { page, start: s, end: e },
         reasons: [why],
-        suggestion: zone === 'body' || zone === 'appendix' ? '若只是第三方或数据来源，可标记为「第三方」忽略；若是作者单位，请改为匿名表述。' : '删除或匿名化（如 “Anonymous Institution”）。',
+        suggestion:
+          zone === 'body' || zone === 'appendix'
+            ? L(
+                '若只是第三方或数据来源，可标记为「第三方」忽略；若是作者单位，请改为匿名表述。',
+                'If it is only a third party or data source, dismiss it as third-party; if it is the authors’ affiliation, anonymize it.',
+              )
+            : L('删除或匿名化（如 “Anonymous Institution”）。', 'Remove or anonymize it (e.g. “Anonymous Institution”).'),
       })
     }
   }
@@ -421,8 +478,11 @@ export function ruleOrcidPath(doc: DocumentFacts, ctx: RuleContext): FindingDraf
       severity: zone === 'references' ? 'info' : authorish ? 'high' : 'medium',
       confidence: valid ? (authorish ? 'high' : 'medium') : 'low',
       text: hit,
-      reasons: [valid ? 'ORCID 格式且校验位正确。' : '疑似 ORCID（格式符合，校验位不符）。', `位于${ZONE_LABEL[zone]}。`],
-      suggestion: '投稿版删除 ORCID；参考文献中他人的 ORCID 可以保留。',
+      reasons: [
+        valid ? L('ORCID 格式且校验位正确。', 'An ORCID iD with a valid checksum.') : L('疑似 ORCID（格式符合，校验位不符）。', 'Looks like an ORCID iD (format matches, checksum does not).'),
+        L(`位于${ZONE_LABEL[zone].zh}。`, `In the ${ZONE_LABEL[zone].en}.`),
+      ],
+      suggestion: L('投稿版删除 ORCID；参考文献中他人的 ORCID 可以保留。', 'Remove ORCID iDs from the submission; other people’s ORCIDs in the references can stay.'),
     })
   }
   for (const hit of scanDoc(doc, LOCAL_PATH)) {
@@ -433,8 +493,8 @@ export function ruleOrcidPath(doc: DocumentFacts, ctx: RuleContext): FindingDraf
       severity: 'medium',
       confidence: 'medium',
       text: hit,
-      reasons: ['文件中出现本地用户目录路径，路径里的用户名可能识别作者。'],
-      suggestion: '删除或改为相对路径（常见于代码清单、日志截图和编译警告）。',
+      reasons: [L('文件中出现本地用户目录路径，路径里的用户名可能识别作者。', 'A local user-directory path appears; the user name in it may identify an author.')],
+      suggestion: L('删除或改为相对路径（常见于代码清单、日志截图和编译警告）。', 'Remove it or use a relative path (common in code listings, log screenshots and build warnings).'),
     })
   }
   return out

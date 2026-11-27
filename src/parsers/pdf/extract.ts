@@ -21,11 +21,18 @@ import { assignZones } from '@/normalize/zones'
 import type { RawPage, RawTextItem } from '@/normalize/raw'
 import { validatePdfBytes } from './validate'
 import { scanBinary } from './binary'
+import { L, type Text } from '@/domain/text'
 
 export type PdfjsLib = typeof Pdfjs
 
 /** 整份文件没有文字层时的提示；做过 OCR 后由会话移除 */
-export const SCANNED_WARNING = '整份文件没有可抽取的文字，可能是扫描件。可以开启本地 OCR 后重新检查。'
+/** 图片里的文字没有识别（做过 OCR 后由会话改写） */
+export const IMG_TEXT_NOTE: Text = L('图片中的文字没有检查（无 OCR）。', 'text inside images was not checked (no OCR).')
+
+export const SCANNED_WARNING: Text = L(
+  '整份文件没有可抽取的文字，可能是扫描件。可以开启本地 OCR 后重新检查。',
+  'The whole file has no extractable text; it may be a scan. Turn on local OCR and check again.',
+)
 
 export interface PdfAssets {
   cMapUrl?: string
@@ -186,11 +193,11 @@ export async function extractDocument(input: ExtractInput, opts: ExtractOptions)
     checkAbort(opts.signal)
     const pageCount = pdf.numPages
     const budget = Math.min(LIMITS.maxPagesPerDoc, opts.pageBudget ?? LIMITS.maxPagesTotal)
-    if (pageCount > budget) throw new PreflightError('PAGE_LIMIT', `${pageCount} 页`)
+    if (pageCount > budget) throw new PreflightError('PAGE_LIMIT', L(`${pageCount} 页`, `${pageCount} pages`))
 
-    const warnings: string[] = []
+    const warnings: Text[] = []
     const coverage: CoverageEntry[] = []
-    const cov = (capability: CoverageEntry['capability'], status: CoverageEntry['status'], reason: string, pageNumbers?: number[]) =>
+    const cov = (capability: CoverageEntry['capability'], status: CoverageEntry['status'], reason: Text, pageNumbers?: number[]) =>
       coverage.push({ documentId: input.id, capability, status, reason, ...(pageNumbers ? { pageNumbers } : {}) })
 
     // 元数据
@@ -200,18 +207,28 @@ export async function extractDocument(input: ExtractInput, opts: ExtractOptions)
       const meta = await pdf.getMetadata()
       info = flattenInfo(meta.info)
       xmp = flattenXmp(meta.metadata)
-      cov('metadata', 'completed', xmp ? '已读取 Info 字典与 XMP。' : '已读取 Info 字典；文件中没有 XMP 元数据。')
+      cov(
+        'metadata',
+        'completed',
+        xmp ? L('已读取 Info 字典与 XMP。', 'Read the Info dictionary and XMP.') : L('已读取 Info 字典；文件中没有 XMP 元数据。', 'Read the Info dictionary; the file has no XMP metadata.'),
+      )
     } catch {
-      cov('metadata', 'failed', '元数据读取失败。')
+      cov('metadata', 'failed', L('元数据读取失败。', 'Reading metadata failed.'))
     }
 
     // 附件
     let attachments: AttachmentFact[] = []
     try {
       attachments = await readAttachments(pdf)
-      cov('attachments', 'completed', attachments.length ? `发现 ${attachments.length} 个嵌入附件（仅检查文件名与描述，不解析内容）。` : '没有嵌入附件。')
+      cov(
+        'attachments',
+        'completed',
+        attachments.length
+          ? L(`发现 ${attachments.length} 个嵌入附件（仅检查文件名与描述，不解析内容）。`, `Found ${attachments.length} embedded attachment(s) (names and descriptions checked; content not parsed).`)
+          : L('没有嵌入附件。', 'No embedded attachments.'),
+      )
     } catch {
-      cov('attachments', 'failed', '附件列表读取失败。')
+      cov('attachments', 'failed', L('附件列表读取失败。', 'Reading the attachment list failed.'))
     }
 
     // 逐页
@@ -264,46 +281,69 @@ export async function extractDocument(input: ExtractInput, opts: ExtractOptions)
     assignZones(pages)
 
     const weak = pages.filter((p) => p.textQuality !== 'ok').map((p) => p.pageNumber)
-    if (failedText.length === pageCount) cov('text', 'failed', '所有页面文本抽取失败。', failedText)
+    if (failedText.length === pageCount) cov('text', 'failed', L('所有页面文本抽取失败。', 'Text extraction failed on every page.'), failedText)
     else if (weak.length > 0) {
       const empty = pages.filter((p) => p.textQuality === 'empty').length
       cov(
         'text',
         'partial',
-        `${weak.length} 页文本为空、过少或疑似乱码（${empty} 页无文本），可能是扫描页、图片或轮廓化文字；这些页面的正文规则未能覆盖。`,
+        L(
+          `${weak.length} 页文本为空、过少或疑似乱码（${empty} 页无文本），可能是扫描页、图片或轮廓化文字；这些页面的正文规则未能覆盖。`,
+          `${weak.length} page(s) have empty, sparse or garbled text (${empty} with none) — likely scans, images or outlined text; the text rules did not cover them.`,
+        ),
         weak,
       )
       if (empty === pageCount) warnings.push(SCANNED_WARNING)
-    } else cov('text', 'completed', `已抽取全部 ${pageCount} 页文本。`)
+    } else cov('text', 'completed', L(`已抽取全部 ${pageCount} 页文本。`, `Extracted text from all ${pageCount} pages.`))
 
     cov(
       'links',
       failedAnnots.length ? 'partial' : 'completed',
-      failedAnnots.length ? `${failedAnnots.length} 页的链接注释读取失败。` : '已检查所有 Link 注释的外部目标。',
+      failedAnnots.length
+        ? L(`${failedAnnots.length} 页的链接注释读取失败。`, `Reading link annotations failed on ${failedAnnots.length} page(s).`)
+        : L('已检查所有 Link 注释的外部目标。', 'Checked the targets of all link annotations.'),
       failedAnnots.length ? failedAnnots : undefined,
     )
     cov(
       'annotations',
       failedAnnots.length ? 'partial' : 'completed',
-      failedAnnots.length ? `${failedAnnots.length} 页注释读取失败。` : '已检查批注作者、内容与表单域值。',
+      failedAnnots.length
+        ? L(`${failedAnnots.length} 页注释读取失败。`, `Reading annotations failed on ${failedAnnots.length} page(s).`)
+        : L('已检查批注作者、内容与表单域值。', 'Checked annotation authors, contents and form field values.'),
       failedAnnots.length ? failedAnnots : undefined,
     )
     if (binary) {
       cov(
         'images',
         'partial',
-        `已检查 ${binary.imageCount} 张嵌入图片的 EXIF / IPTC / XMP 元数据${binary.images.length ? `（${binary.images.length} 张带元数据）` : ''}；图片中的文字没有检查（无 OCR）。`,
+        L(
+          `已检查 ${binary.imageCount} 张嵌入图片的 EXIF / IPTC / XMP 元数据${binary.images.length ? `（${binary.images.length} 张带元数据）` : ''}；${IMG_TEXT_NOTE.zh}`,
+          `Checked EXIF / IPTC / XMP metadata of ${binary.imageCount} embedded image(s)${binary.images.length ? ` (${binary.images.length} with metadata)` : ''}; ${IMG_TEXT_NOTE.en}`,
+        ),
       )
       cov(
         'hiddenContent',
         'partial',
         binary.revisionCount > 1
-          ? `文件有 ${binary.revisionCount} 个保存版本，已检查旧版本的元数据；旧版本的正文、白色 / 被遮挡文字与可选内容层（OCG）没有检查。`
-          : '没有增量保存的旧版本；白色 / 被遮挡文字与可选内容层（OCG）没有检查。',
+          ? L(
+              `文件有 ${binary.revisionCount} 个保存版本，已检查旧版本的元数据；旧版本的正文、白色 / 被遮挡文字与可选内容层（OCG）没有检查。`,
+              `The file has ${binary.revisionCount} saved revisions; their metadata was checked, but not their text, white / hidden text or optional content (OCG).`,
+            )
+          : L(
+              '没有增量保存的旧版本；白色 / 被遮挡文字与可选内容层（OCG）没有检查。',
+              'No earlier saved revisions; white / hidden text and optional content (OCG) were not checked.',
+            ),
       )
     } else {
-      cov('images', 'failed', '无法读取图片对象，图片元数据没有检查；图片中的文字也没有检查（无 OCR）。')
-      cov('hiddenContent', 'unsupported', '无法读取对象层：增量保存的旧版本、白色 / 被遮挡文字与可选内容层（OCG）都没有检查。')
+      cov('images', 'failed', L('无法读取图片对象，图片元数据没有检查；图片中的文字也没有检查（无 OCR）。', 'Image objects could not be read, so image metadata and image text were not checked.'))
+      cov(
+        'hiddenContent',
+        'unsupported',
+        L(
+          '无法读取对象层：增量保存的旧版本、白色 / 被遮挡文字与可选内容层（OCG）都没有检查。',
+          'The object layer could not be read: earlier revisions, white / hidden text and optional content (OCG) were not checked.',
+        ),
+      )
     }
 
     const parseStatus: DocumentFacts['parseStatus'] =

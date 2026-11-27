@@ -8,6 +8,7 @@ import type { SourceFacts, SourceFileFact, SourceFileKind } from '@/domain/types
 import { PreflightError } from '@/domain/errors'
 import { parseJpegMeta, parseXmpFields } from '@/parsers/pdf/imagemeta'
 import { texAuthorNames } from '@/normalize/tex'
+import { L } from '@/domain/text'
 
 export const SOURCE_LIMITS = {
   maxArchiveBytes: 50 * 1024 * 1024,
@@ -173,7 +174,7 @@ export async function parseSourceArchive(name: string, bytes: Uint8Array): Promi
         }
         if (Object.keys(fields).length) facts.meta.push({ path, kind: 'office', fields, gps: false })
       } catch {
-        facts.warnings.push(`${path}：Office 文档无法解析。`)
+        facts.warnings.push(L(`${path}：Office 文档无法解析。`, `${path}: the Office document could not be parsed.`))
       }
       continue
     }
@@ -189,11 +190,12 @@ export async function parseSourceArchive(name: string, bytes: Uint8Array): Promi
     const text = decodeText(raw)
     if (text) facts.texts.push({ path, kind, text })
   }
-  if (facts.texts.length >= SOURCE_LIMITS.maxTexts) facts.warnings.push(`文本文件超过 ${SOURCE_LIMITS.maxTexts} 个，只检查了前 ${SOURCE_LIMITS.maxTexts} 个。`)
+  if (facts.texts.length >= SOURCE_LIMITS.maxTexts)
+    facts.warnings.push(L(`文本文件超过 ${SOURCE_LIMITS.maxTexts} 个，只检查了前 ${SOURCE_LIMITS.maxTexts} 个。`, `More than ${SOURCE_LIMITS.maxTexts} text files; only the first ${SOURCE_LIMITS.maxTexts} were checked.`))
   const pdfs = facts.files.filter((f) => f.kind === 'pdf').length
-  if (pdfs) facts.warnings.push(`包内有 ${pdfs} 个 PDF 没有检查；如需检查，请作为主稿或补充材料单独导入。`)
+  if (pdfs) facts.warnings.push(L(`包内有 ${pdfs} 个 PDF 没有检查；如需检查，请作为主稿或补充材料单独导入。`, `${pdfs} PDF(s) in the archive were not checked; add them as the main paper or a supplement to check them.`))
   const nested = facts.files.filter((f) => f.kind === 'archive').length
-  if (nested) facts.warnings.push(`包内有 ${nested} 个压缩文件没有展开检查。`)
+  if (nested) facts.warnings.push(L(`包内有 ${nested} 个压缩文件没有展开检查。`, `${nested} nested archive(s) were not unpacked.`))
   facts.files.sort((a, b) => a.path.localeCompare(b.path))
   facts.authorNames = texAuthorNames(facts.texts.filter((t) => t.kind === 'tex').map((t) => t.text))
   return facts

@@ -4,9 +4,11 @@ import { NCheckbox } from 'naive-ui'
 import type { ScanResult } from '@/domain/types'
 import { checklistFor } from '@/app/checklist'
 import { useSession } from '@/app/session'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{ result: ScanResult }>()
 const s = useSession()
+const { t, tx } = useI18n()
 
 const items = computed(() => checklistFor(props.result))
 const done = computed(() => items.value.filter((i) => s.state.checked.has(i.id)).length)
@@ -15,8 +17,8 @@ const done = computed(() => items.value.filter((i) => s.state.checked.has(i.id))
 <template>
   <details class="check" data-testid="checklist">
     <summary>
-      <span class="title">人工核对清单</span>
-      <span class="muted">· 规则查不到、需要你亲自确认的事项</span>
+      <span class="title">{{ t('check.title') }}</span>
+      <span class="muted">{{ t('check.sub') }}</span>
       <span class="count" :class="{ all: done === items.length }">{{ done }} / {{ items.length }}</span>
     </summary>
     <ul>
@@ -26,13 +28,13 @@ const done = computed(() => items.value.filter((i) => s.state.checked.has(i.id))
           :data-testid="`check-${it.id}`"
           @update:checked="(v: boolean) => s.toggleChecked(it.id, v)"
         >
-          <span class="it-title">{{ it.title }}</span>
+          <span class="it-title">{{ tx(it.title) }}</span>
         </n-checkbox>
-        <div class="detail">{{ it.detail }}</div>
-        <div v-if="it.emphasis" class="emph">{{ it.emphasis }}</div>
+        <div class="detail">{{ tx(it.detail) }}</div>
+        <div v-if="it.emphasis" class="emph">{{ tx(it.emphasis) }}</div>
       </li>
     </ul>
-    <div class="foot">勾选状态只保存在本次会话中，可以随报告一起导出。</div>
+    <div class="foot">{{ t('check.foot') }}</div>
   </details>
 </template>
 

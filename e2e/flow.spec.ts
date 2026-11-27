@@ -248,3 +248,35 @@ test('PWA：安装后断网仍能打开并检查示例稿件；清单与图标�
   await expect(page.getByTestId('finding-R02').first()).toBeVisible()
   await context.setOffline(false)
 })
+
+test('中英文切换：界面、发现说明与导出报告随语言变化，选择会被记住', async ({ page }) => {
+  const net = await guardNetwork(page)
+  await page.goto('/')
+  await expect(page.getByTestId('start-scan')).toContainText('开始检查')
+  await page.getByTestId('lang-toggle').click()
+  await expect(page.getByTestId('start-scan')).toContainText('Start check')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+
+  await page.getByTestId('sample-leaky').click()
+  await page.getByTestId('start-scan').click()
+  await expect(page.getByTestId('finding-list')).toBeVisible({ timeout: 30_000 })
+  const card = page.getByTestId('finding-R02').first()
+  await expect(card).toContainText('How to fix')
+  await expect(card).not.toContainText('怎么改')
+
+  await page.getByTestId('open-export').click()
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-html').click()])
+  const html = await readFile((await dl.path())!, 'utf8')
+  expect(html).toContain('<html lang="en">')
+  for (const re of IDENTITY) expect(html, String(re)).not.toMatch(re)
+
+  // 切回中文后，已有结果直接换成中文，不需要重新检查
+  await page.getByTestId('lang-toggle').click()
+  await expect(card).toContainText('怎么改')
+  await page.reload()
+  await expect(page.getByTestId('start-scan')).toContainText('开始检查')
+  const stored = await page.evaluate(() => localStorage.getItem('blindpreflight.locale.v1'))
+  expect(stored).toBe('zh')
+  expect(net.external).toEqual([])
+  expect(net.errors).toEqual([])
+})

@@ -2,10 +2,12 @@
 import { ref } from 'vue'
 import { NButton } from 'naive-ui'
 import { visibleText } from '@/utils/safe-text'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{ label: string; hint: string; file: File | null; disabled?: boolean; testId: string; large?: boolean; accept?: string; sub?: string }>()
 const emit = defineEmits<{ change: [file: File | null] }>()
 
+const { t } = useI18n()
 const input = ref<HTMLInputElement | null>(null)
 const over = ref(false)
 
@@ -36,7 +38,7 @@ function size(n: number) {
     :data-testid="testId"
     role="button"
     tabindex="0"
-    :aria-label="`${label}：${file ? '已选择，点击更换' : '点击选择文件或拖入'}`"
+    :aria-label="t(file ? 'slot.chosen' : 'slot.empty', { label })"
     @click="pick"
     @keydown.enter.prevent="pick"
     @keydown.space.prevent="pick"
@@ -64,13 +66,13 @@ function size(n: number) {
         <div class="slot-meta">
           {{ size(file.size) }}
           <span class="sep">·</span>
-          <span>点击更换</span>
-          <n-button text size="tiny" type="error" :disabled="disabled" @click.stop="emit('change', null)">移除</n-button>
+          <span>{{ t('slot.replace') }}</span>
+          <n-button text size="tiny" type="error" :disabled="disabled" @click.stop="emit('change', null)">{{ t('slot.remove') }}</n-button>
         </div>
       </template>
       <template v-else>
         <div class="slot-empty">{{ hint }}</div>
-        <div v-if="large || sub" class="slot-sub">{{ sub ?? 'PDF · 单份 ≤ 25 MB / 100 页' }}</div>
+        <div v-if="large || sub" class="slot-sub">{{ sub ?? t('slot.pdfLimit') }}</div>
       </template>
     </div>
   </div>

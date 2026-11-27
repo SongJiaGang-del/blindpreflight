@@ -146,7 +146,7 @@ export async function sanitizePdf(input: Uint8Array, opts: SanitizeOptions = DEF
           continue
         }
         report.annotationsRemoved++
-        report.annotationTypes[sub || '未知'] = (report.annotationTypes[sub || '未知'] ?? 0) + 1
+        report.annotationTypes[sub || '?'] = (report.annotationTypes[sub || '?'] ?? 0) + 1
       }
       if (keep.length === annots.size()) continue
       if (keep.length) page.node.set(N('Annots'), ctx.obj(keep))

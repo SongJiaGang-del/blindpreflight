@@ -6,33 +6,41 @@ import { parseUserTerms } from '@/rules/terms'
 import { RULES } from '@/rules/engine'
 import { PRESETS, getPreset } from '@/presets'
 import FileSlot from './FileSlot.vue'
+import { useI18n } from '@/i18n'
+import { presetName as nameOf } from '@/presets'
 import PresetCard from './PresetCard.vue'
 
 const s = useSession()
 const st = s.state
+const { t, tx, locale } = useI18n()
 
 const termCount = computed(() => parseUserTerms(st.termsText).length)
 const ambiguousCount = computed(() => parseUserTerms(st.termsText).filter((t) => t.ambiguous).length)
 const presetName = computed(() => {
-  const p = getPreset(st.presetId)
-  return `${p.venue}${p.year ? ` ${p.year}` : ''}`
+  void s.presetList.value
+  return nameOf(getPreset(st.presetId), locale.value)
 })
 const suppCount = computed(() => (st.files['supp-1'] ? 1 : 0) + (st.files['supp-2'] ? 1 : 0))
 
 const steps = computed(() => [
   {
     n: 1,
-    title: '放入稿件',
+    title: t('import.step.files'),
     done: !!st.files.main,
-    note: st.files.main ? `主稿${suppCount.value ? ` + ${suppCount.value} 份补充` : ''}${st.sourceFile ? ' + 源文件' : ''}` : '待选择',
+    note: st.files.main
+      ? t('import.step.filesNote', {
+          supp: suppCount.value ? t('import.step.supp', { n: suppCount.value }) : '',
+          src: st.sourceFile ? t('import.step.src') : '',
+        })
+      : t('import.step.pending'),
     target: 'step-files',
   },
-  { n: 2, title: '选择会场', done: true, note: presetName.value, target: 'step-venue' },
+  { n: 2, title: t('import.step.venue'), done: true, note: presetName.value, target: 'step-venue' },
   {
     n: 3,
-    title: '填写身份词',
+    title: t('import.step.terms'),
     done: termCount.value > 0,
-    note: termCount.value ? `${termCount.value} 个` : '推荐填写',
+    note: termCount.value ? t('import.step.termCount', { n: termCount.value }) : t('import.step.recommended'),
     target: 'step-terms',
   },
 ])
@@ -43,12 +51,12 @@ function jump(id: string) {
 
 const progressText = computed(() => {
   const p = st.progress
-  const doc = SLOT_LABEL[p.slot]
-  if (st.phase === 'reading') return `正在读取${doc}…`
-  if (st.phase === 'parsing') return p.total ? `正在解析${doc}：第 ${p.done} / ${p.total} 页` : `正在打开${doc}…`
-  if (st.phase === 'source') return '正在读取源文件包…'
-  if (st.phase === 'ocr') return p.total ? `正在本地 OCR 识别${doc}：第 ${p.done} / ${p.total} 页` : '正在加载本地 OCR 组件…'
-  if (st.phase === 'scanning') return '正在运行检查规则…'
+  const doc = locale.value === 'zh' ? tx(SLOT_LABEL[p.slot]) : tx(SLOT_LABEL[p.slot]).toLowerCase()
+  if (st.phase === 'reading') return t('progress.reading', { doc })
+  if (st.phase === 'parsing') return p.total ? t('progress.parsing', { doc, done: p.done, total: p.total }) : t('progress.opening', { doc })
+  if (st.phase === 'source') return t('progress.source')
+  if (st.phase === 'ocr') return p.total ? t('progress.ocr', { doc, done: p.done, total: p.total }) : t('progress.ocrLoad')
+  if (st.phase === 'scanning') return t('progress.scanning')
   return ''
 })
 const percent = computed(() => {
@@ -58,11 +66,7 @@ const percent = computed(() => {
   const per = p.total ? p.done / p.total : 0
   return Math.min(98, Math.round(((p.docIndex + per) / p.docCount) * 100))
 })
-const HINTS: Record<string, string> = {
-  main: '点击选择，或把投稿 PDF（以及源文件 zip）拖到页面任意位置',
-  'supp-1': '可选：附录 / 补充材料',
-  'supp-2': '可选：第二份补充材料',
-}
+const HINTS: Record<string, string> = { main: 'import.hint.main', 'supp-1': 'import.hint.supp1', 'supp-2': 'import.hint.supp2' }
 
 /* 整页拖放：拖着文件进入窗口时显示遮罩，松开后依次填入空槽 */
 const dragging = ref(false)
@@ -112,21 +116,21 @@ onBeforeUnmount(() => {
   <section class="import" aria-labelledby="import-title">
     <div class="hero">
       <div class="hero-text">
-        <div class="eyebrow">Pre-submission anonymity check</div>
-        <h1 id="import-title">投稿前，先查一遍匿名性</h1>
+        <div class="eyebrow">{{ t('import.eyebrow') }}</div>
+        <h1 id="import-title">{{ t('import.title') }}</h1>
         <p>
-          检查 PDF 的元数据、作者区、邮箱、机构、致谢与资助、代码 / 主页链接、第一人称自引、页眉页脚、文件名、批注和嵌入附件，每条发现都会定位到原页。
-          <strong>文件只在这个浏览器标签页里处理，不会上传。</strong>
+          {{ t('import.lede') }}
+          <strong>{{ t('import.ledeStrong') }}</strong>
         </p>
       </div>
-      <dl class="stats" aria-label="工具概况">
-        <div><dt>{{ RULES.length }}</dt><dd>项检查规则</dd></div>
-        <div><dt>{{ PRESETS.length }}</dt><dd>个会场预设</dd></div>
-        <div><dt>0</dt><dd>次网络上传</dd></div>
+      <dl class="stats" :aria-label="t('import.stats')">
+        <div><dt>{{ RULES.length }}</dt><dd>{{ t('import.statRules') }}</dd></div>
+        <div><dt>{{ PRESETS.length }}</dt><dd>{{ t('import.statPresets') }}</dd></div>
+        <div><dt>0</dt><dd>{{ t('import.statUploads') }}</dd></div>
       </dl>
     </div>
 
-    <ol class="steps" aria-label="检查步骤">
+    <ol class="steps" :aria-label="t('import.steps')">
       <li v-for="step in steps" :key="step.n" :class="{ done: step.done }">
         <button type="button" @click="jump(step.target)">
           <span class="num" aria-hidden="true">
@@ -143,19 +147,19 @@ onBeforeUnmount(() => {
 
     <div id="step-files" class="card">
       <header class="card-head">
-        <h2><span class="badge">1</span>放入稿件</h2>
+        <h2><span class="badge">1</span>{{ t('import.step.files') }}</h2>
         <div class="samples">
-          没有现成的文件？
-          <n-button size="tiny" secondary :disabled="s.busy.value" data-testid="sample-leaky" @click="s.loadSamples('leaky')">试用：含泄露的稿件</n-button>
-          <n-button size="tiny" secondary :disabled="s.busy.value" data-testid="sample-fixed" @click="s.loadSamples('fixed')">试用：修复后 + 补充材料</n-button>
+          {{ t('import.noFile') }}
+          <n-button size="tiny" secondary :disabled="s.busy.value" data-testid="sample-leaky" @click="s.loadSamples('leaky')">{{ t('import.sampleLeaky') }}</n-button>
+          <n-button size="tiny" secondary :disabled="s.busy.value" data-testid="sample-fixed" @click="s.loadSamples('fixed')">{{ t('import.sampleFixed') }}</n-button>
         </div>
       </header>
       <div class="files">
         <FileSlot
           v-for="id in SLOT_IDS"
           :key="id"
-          :label="SLOT_LABEL[id]"
-          :hint="HINTS[id] ?? ''"
+          :label="tx(SLOT_LABEL[id])"
+          :hint="t(HINTS[id] ?? '')"
           :file="st.files[id]"
           :disabled="s.busy.value"
           :test-id="`slot-${id}`"
@@ -164,9 +168,9 @@ onBeforeUnmount(() => {
           @change="(f) => s.setFile(id, f)"
         />
         <FileSlot
-          label="源文件包（可选）"
-          hint="LaTeX 工程或代码的 .zip，或单个 .tex"
-          sub="检查注释、\author、.git、编译日志、图片元数据 · ≤ 50 MB"
+          :label="t('import.srcLabel')"
+          :hint="t('import.srcHint')"
+          :sub="t('import.srcSub')"
           accept=".zip,.tex,.bib,application/zip"
           :file="st.sourceFile"
           :disabled="s.busy.value"
@@ -177,55 +181,55 @@ onBeforeUnmount(() => {
       </div>
       <div class="ocr">
         <n-checkbox :checked="st.ocr" :disabled="s.busy.value" data-testid="ocr-toggle" @update:checked="(v: boolean) => s.setOcr(v)">
-          对扫描页 / 图片页做本地 OCR
+          {{ t('import.ocr') }}
         </n-checkbox>
         <n-radio-group v-if="st.ocr" size="small" :value="st.ocrLang" :disabled="s.busy.value" @update:value="(v: 'eng' | 'eng+chi_sim') => s.setOcr(true, v)">
-          <n-radio-button value="eng">英文</n-radio-button>
-          <n-radio-button value="eng+chi_sim">中文 + 英文</n-radio-button>
+          <n-radio-button value="eng">{{ t('import.ocrEng') }}</n-radio-button>
+          <n-radio-button value="eng+chi_sim">{{ t('import.ocrChi') }}</n-radio-button>
         </n-radio-group>
-        <span class="muted small">只识别文字缺失或乱码的页面，在本机完成；首次使用需加载约 {{ st.ocrLang === 'eng' ? 6 : 8 }} MB 识别组件，每页需要几秒。</span>
+        <span class="muted small">{{ t('import.ocrNote', { mb: st.ocrLang === 'eng' ? 6 : 8 }) }}</span>
       </div>
     </div>
 
     <div class="two">
       <div id="step-venue" class="card">
         <header class="card-head">
-          <h2><span class="badge">2</span>选择会场</h2>
+          <h2><span class="badge">2</span>{{ t('import.step.venue') }}</h2>
         </header>
         <PresetCard :preset-id="st.presetId" :disabled="s.busy.value" @change="s.setPreset" />
       </div>
 
       <div id="step-terms" class="card terms">
         <header class="card-head">
-          <h2><span class="badge">3</span>填写身份词 <span class="opt">推荐</span></h2>
-          <span v-if="termCount" class="count">{{ termCount }} 个</span>
+          <h2><span class="badge">3</span>{{ t('import.step.terms') }} <span class="opt">{{ t('import.recommended') }}</span></h2>
+          <span v-if="termCount" class="count">{{ t('import.step.termCount', { n: termCount }) }}</span>
         </header>
         <p class="muted small">
-          每行一个：作者姓名（含中英文 / 拼音）、机构简称、实验室名、项目或系统名、个人主页域名、GitHub 用户名等。工具不知道作者是谁，填了才能在全文中查找。
-          <b>仅本次会话有效，不写入报告。</b>
+          {{ t('import.termsHelp') }}
+          <b>{{ t('import.termsPrivate') }}</b>
         </p>
         <n-input
           v-model:value="st.termsText"
           type="textarea"
           :autosize="{ minRows: 4, maxRows: 9 }"
-          placeholder="例如：&#10;Zhang San&#10;张三&#10;Example Lab&#10;example-user"
+          :placeholder="t('import.termsPlaceholder')"
           :disabled="s.busy.value"
           data-testid="terms-input"
           :input-props="{ spellcheck: false, autocomplete: 'off' }"
         />
         <div class="terms-foot">
-          <n-checkbox v-model:checked="st.strictShortTerms" size="small" :disabled="s.busy.value">短词（如两字母缩写、单个汉字）也按高优先级处理</n-checkbox>
-          <span v-if="ambiguousCount && !st.strictShortTerms" class="muted small">{{ ambiguousCount }} 个短词默认只作为“需核实”。</span>
+          <n-checkbox v-model:checked="st.strictShortTerms" size="small" :disabled="s.busy.value">{{ t('import.strict') }}</n-checkbox>
+          <span v-if="ambiguousCount && !st.strictShortTerms" class="muted small">{{ t('import.ambiguous', { n: ambiguousCount }) }}</span>
         </div>
       </div>
     </div>
 
     <div class="alerts">
-      <n-alert v-if="st.selectionError" type="warning" :bordered="false" data-testid="selection-error">{{ st.selectionError }}</n-alert>
-      <n-alert v-if="st.phase === 'error' && st.error" type="error" :bordered="false" title="未能完成检查" data-testid="scan-error">
-        {{ st.error }}
+      <n-alert v-if="st.selectionError" type="warning" :bordered="false" data-testid="selection-error">{{ tx(st.selectionError) }}</n-alert>
+      <n-alert v-if="st.phase === 'error' && st.error" type="error" :bordered="false" :title="t('import.failed')" data-testid="scan-error">
+        {{ tx(st.error) }}
       </n-alert>
-      <n-alert v-if="st.phase === 'cancelled'" type="default" :bordered="false">已取消，没有保留任何中间结果。</n-alert>
+      <n-alert v-if="st.phase === 'cancelled'" type="default" :bordered="false">{{ t('import.cancelled') }}</n-alert>
     </div>
 
     <div class="go" :class="{ ready: !!st.files.main }">
@@ -235,15 +239,15 @@ onBeforeUnmount(() => {
           <span class="pct">{{ percent }}%</span>
         </div>
         <n-progress type="line" :percentage="percent" :show-indicator="false" :height="6" />
-        <n-button size="small" data-testid="cancel" @click="s.cancel()">取消</n-button>
+        <n-button size="small" data-testid="cancel" @click="s.cancel()">{{ t('common.cancel') }}</n-button>
       </div>
       <template v-else>
         <div class="go-text">
-          <b>{{ st.files.main ? '准备就绪' : '先放入主稿 PDF' }}</b>
-          <span class="muted small">{{ presetName }} 预设 · {{ termCount }} 个身份词 · 单份 ≤ 25 MB / 100 页，合计 ≤ 50 MB / 200 页</span>
+          <b>{{ st.files.main ? t('import.ready') : t('import.needMain') }}</b>
+          <span class="muted small">{{ t('import.goMeta', { preset: presetName, terms: termCount }) }}</span>
         </div>
         <div class="go-acts">
-          <n-button v-if="s.result.value" size="large" @click="st.view = 'results'">返回结果</n-button>
+          <n-button v-if="s.result.value" size="large" @click="st.view = 'results'">{{ t('import.back') }}</n-button>
           <n-button
             type="primary"
             size="large"
@@ -252,24 +256,24 @@ onBeforeUnmount(() => {
             data-testid="start-scan"
             @click="s.start()"
           >
-            {{ s.result.value ? '重新检查' : '开始检查' }}
+            {{ s.result.value ? t('import.rescan') : t('import.start') }}
           </n-button>
         </div>
       </template>
     </div>
 
-    <ul class="promises" aria-label="隐私承诺">
+    <ul class="promises" :aria-label="t('import.promises')">
       <li>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" /><path d="M9 12l2 2 4-4" /></svg>
-        <div><b>不上传</b><span>PDF 只在本标签页内存中解析，关闭即清除。</span></div>
+        <div><b>{{ t('import.p1t') }}</b><span>{{ t('import.p1') }}</span></div>
       </li>
       <li>
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5z" /><path d="M5 5l14 14" /></svg>
-        <div><b>不联网</b><span>CSP 禁止外部请求，没有云端 AI、统计或第三方字体。</span></div>
+        <div><b>{{ t('import.p2t') }}</b><span>{{ t('import.p2') }}</span></div>
       </li>
       <li>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5" /><path d="M10 13h6M10 17h4" /></svg>
-        <div><b>报告默认脱敏</b><span>姓名、邮箱、机构打码，文件名隐藏。</span></div>
+        <div><b>{{ t('import.p3t') }}</b><span>{{ t('import.p3') }}</span></div>
       </li>
     </ul>
 
@@ -277,8 +281,8 @@ onBeforeUnmount(() => {
       <div v-if="dragging" class="drop-mask" aria-hidden="true">
         <div class="drop-box">
           <svg viewBox="0 0 40 48" width="54"><path d="M4 3h22l10 10v32H4z" /><path d="M26 3v10h10" /><path d="M20 37V22M14 28l6-6 6 6" /></svg>
-          <b>松开以放入</b>
-          <span>依次填入主稿和补充材料的空位（最多 3 份）</span>
+          <b>{{ t('import.drop') }}</b>
+          <span>{{ t('import.dropNote') }}</span>
         </div>
       </div>
     </Transition>

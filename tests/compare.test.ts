@@ -65,7 +65,7 @@ describe('修复前后对比', () => {
     const cmp = compareScans(leaky, cleaned)
     expect(cmp.added).toHaveLength(0)
     expect(cmp.fixed.filter((f) => !['metadata', 'annotation', 'attachment'].includes(f.source)).map((f) => [f.ruleId, f.source, f.field, f.snippet])).toEqual([])
-    expect(cmp.remaining.some(({ next }) => next.ruleId === 'R03' && next.reasons.some((x) => x.includes('上一版')))).toBe(true)
+    expect(cmp.remaining.some(({ next }) => next.ruleId === 'R03' && next.reasons.some((x) => x.zh.includes('上一版')))).toBe(true)
     expect(cmp.remaining.every(({ next }) => next.source === 'text' || next.source === 'link' || next.source === 'filename')).toBe(true)
   })
 
@@ -107,8 +107,9 @@ describe('人工核对清单与报告', () => {
   test('清单随会场预设调整致谢说明', async () => {
     const neurips = await scanMain(sampleBytes('sample-leaky.pdf'), 'neurips-2026')
     const ack = checklistFor(neurips).find((i) => i.id === 'ack')!
-    expect(ack.detail).toMatch(/NeurIPS/)
-    expect(ack.detail).toMatch(/不得包含致谢/)
+    expect(ack.detail.zh).toMatch(/NeurIPS/)
+    expect(ack.detail.zh).toMatch(/不得包含致谢/)
+    expect(ack.detail.en).toMatch(/must not contain acknowledgments/)
   })
 
   test('报告写入清单勾选与对比计数；未提供时为 null', () => {

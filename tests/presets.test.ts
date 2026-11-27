@@ -41,7 +41,7 @@ describe('自定义预设', () => {
     expect(p.severityOverrides.R07).toBe('high')
     expect(p.templateMarker?.label).toBe('Anonymous Workshop Submission')
     expect(p.verificationStatus).toBe('unverified')
-    expect(p.limitations.join()).toMatch(/没有经过核验/)
+    expect(p.limitations.map((l) => l.zh).join()).toMatch(/没有经过核验/)
   })
 
   test('没有自己的模板标记时沿用基础预设的', () => {
@@ -52,7 +52,7 @@ describe('自定义预设', () => {
   test('登记后可被 getPreset 找到，并影响扫描结果', () => {
     setCustomPresets([toPreset(spec, getBuiltinPreset(spec.baseId))])
     expect(allPresets().some((p) => p.id === spec.id)).toBe(true)
-    expect(getPreset(spec.id).venue).toBe('Example Workshop')
+    expect(getPreset(spec.id).venue.zh).toBe('Example Workshop')
 
     const opts = { userTerms: parseUserTerms('Widget Alignment'), strictShortTerms: false }
     const base = runScan([leaky.facts], { ...opts, presetId: 'neurips-2026' })

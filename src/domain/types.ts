@@ -5,7 +5,11 @@
  * - 坐标 BBox 统一为「未旋转的 PDF 用户空间」，原点在左下；渲染时由 viewport 转换。
  * - page = null 表示文档级（元数据、文件名、附件），不得用 0 / 1 冒充真实页码。
  * - 原始 File / ArrayBuffer / PDFDocumentProxy 不进入本文件中的任何可序列化类型。
+ * - 面向用户的说明文字（原因、建议、覆盖说明、预设摘要）一律是中英双语 Text。
  */
+import type { Text } from './text'
+
+export type { Text } from './text'
 
 export type DocumentRole = 'main' | 'supplement' | 'source'
 export type Severity = 'high' | 'medium' | 'info'
@@ -197,7 +201,7 @@ export interface CoverageEntry {
   documentId: string | null
   capability: CoverageCapability
   status: CoverageStatus
-  reason: string
+  reason: Text
   pageNumbers?: number[]
 }
 
@@ -261,7 +265,7 @@ export interface SourceFacts {
   authorNames: string[]
   /** 版本库目录（.git / .svn / .hg） */
   vcsDirs: string[]
-  warnings: string[]
+  warnings: Text[]
 }
 
 export interface DocumentFacts {
@@ -279,7 +283,7 @@ export interface DocumentFacts {
   attachments: AttachmentFact[]
   internalLinkCount: number
   coverage: CoverageEntry[]
-  warnings: string[]
+  warnings: Text[]
   /** 图片元数据、字体名、增量保存旧版本；读取失败或未运行时为 undefined */
   binary?: BinaryFacts
 }
@@ -288,7 +292,7 @@ export interface PolicyRef {
   presetId: string
   label: string
   url: string
-  note: string
+  note: Text
 }
 
 /** 一处出现位置。聚合型发现（如重复页眉）可有多处。 */
@@ -328,6 +332,8 @@ export interface Finding {
   zone: Zone | null
   /** 原文（不是规范化替代文本）或字段值，最长约 240 字 */
   snippet: string
+  /** 规则合成的证据说明（如“GPS：有”），有则界面显示它而不是 snippet */
+  snippetText: Text | null
   /** 命中在 snippet 中的位置，便于高亮 */
   matchInSnippet: [number, number] | null
   /** 前后文 */
@@ -342,8 +348,8 @@ export interface Finding {
   linkTarget: string | null
   /** 链接可见文字 */
   visibleText: string | null
-  reasons: string[]
-  suggestion: string
+  reasons: Text[]
+  suggestion: Text
   policyRefs: PolicyRef[]
   matchedUserTerm: boolean
 }
@@ -365,26 +371,26 @@ export type AckPolicy = 'forbidden' | 'aiDisclosureOnly' | 'noIdentity'
 
 export interface VenuePreset {
   id: string
-  venue: string
+  venue: Text
   year: number | null
-  track: string
-  phase: string
+  track: Text
+  phase: Text
   version: string
   verifiedAt: string | null
   verificationStatus: 'verified' | 'partial' | 'unverified'
   /** 产品实现程度：与「资料已核验」相互独立 */
   implementationStatus: 'implemented' | 'partial' | 'reference'
-  summary: string[]
+  summary: Text[]
   sources: PresetSource[]
   ackPolicy: AckPolicy
   /** 外链：任意可点击链接都需提示（如 MobiCom 格式条款） */
   flagAllEmbeddedLinks: boolean
-  linkNote: string | null
+  linkNote: Text | null
   disabledRuleIds: string[]
   severityOverrides: Record<string, Severity>
-  limitations: string[]
+  limitations: Text[]
   /** 审稿模式模板会印出的标记（正则源码，忽略大小写）；找不到时提示可能用了终稿模板 */
-  templateMarker?: { pattern: string; label: string; suggestion: string } | null
+  templateMarker?: { pattern: string; label: string; suggestion: Text } | null
   /** 用户自定义的预设（保存在本机 localStorage） */
   custom?: boolean
 }
@@ -398,14 +404,14 @@ export interface ScanOptions {
    * 仍用这些名字查正文，避免“元数据没了 → 工具不知道作者是谁 → 正文里的名字被当成已修复”。
    * 只在内存中，不写入报告。
    */
-  knownNames?: Array<{ raw: string; tokens: string[]; source: string }>
+  knownNames?: Array<{ raw: string; tokens: string[]; source: Text }>
   /** 可选的源文件包（LaTeX / zip） */
   source?: SourceFacts | null
 }
 
 export interface RuleRunStatus {
   ruleId: string
-  title: string
+  title: Text
   status: 'ran' | 'disabled'
   findingCount: number
 }
@@ -424,7 +430,7 @@ export interface ScanResult {
   /** 本次扫描使用的自定义词条数（词条本身不写入报告） */
   userTermCount: number
   /** 源文件包摘要（不含文件内容）；没有时为 null */
-  source: { name: string; byteSize: number; fileCount: number; textCount: number; warnings: string[] } | null
+  source: { name: string; byteSize: number; fileCount: number; textCount: number; warnings: Text[] } | null
 }
 
 export interface ReviewDecision {

@@ -82,7 +82,7 @@ describe('OCR 结果转文字项', () => {
     const r = runScan([doc], { presetId: 'generic', userTerms: [], strictShortTerms: false })
     const email = r.findings.find((f) => f.ruleIds.includes('R02'))
     expect(email).toBeDefined()
-    expect(email!.reasons.join()).toMatch(/本地 OCR/)
+    expect(email!.reasons.map((r) => r.zh).join()).toMatch(/本地 OCR/)
     expect(email!.confidence).not.toBe('high')
     expect(email!.bboxes?.length).toBeGreaterThan(0)
     expect(r.coverage.find((c) => c.capability === 'images' && c.documentId == null)?.status).toBe('partial')

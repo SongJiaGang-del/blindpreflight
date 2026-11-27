@@ -22,13 +22,17 @@ import { contextAround, originalText, rangeBBoxes } from '@/normalize/mapping'
 import { viewRangeToBase } from '@/normalize/views'
 import { zoneAtChar } from '@/normalize/zones'
 import { freshRegex } from './patterns'
+import { L, type Text } from '@/domain/text'
+import { ZONE_LABEL } from '@/domain/labels'
+
+export { ZONE_LABEL }
 
 export interface DerivedName {
   /** 原始名字（来自元数据） */
   raw: string
   /** 用于匹配的小写词元 */
   tokens: string[]
-  source: string
+  source: Text
 }
 
 export interface RuleContext {
@@ -105,8 +109,8 @@ export interface FindingDraft {
   source: FindingSource
   severity: Severity
   confidence: Confidence
-  reasons: string[]
-  suggestion: string
+  reasons: Text[]
+  suggestion: Text
   /** 文本来源：命中页与基准范围 */
   text?: { page: PageFacts; start: number; end: number }
   /** 附加出现位置（聚合型发现） */
@@ -116,6 +120,8 @@ export interface FindingDraft {
   rect?: BBox | null
   /** 非文本来源的展示内容 */
   snippet?: string
+  /** 规则合成的证据说明（界面优先显示） */
+  snippetText?: Text | null
   /** 非文本来源：命中在 snippet 中的位置（用于高亮） */
   snippetMatch?: [number, number] | null
   zone?: Zone | null
@@ -209,7 +215,13 @@ export function materialize(doc: DocumentFacts, d: FindingDraft, policyRefs: Pol
   let reasons = d.reasons
   let confidence = d.confidence
   if (d.text?.page.ocr) {
-    reasons = [...reasons, '这段文字来自本地 OCR 识别（扫描页 / 图片页），可能有识别错误，请对照原页确认。']
+    reasons = [
+      ...reasons,
+      L(
+        '这段文字来自本地 OCR 识别（扫描页 / 图片页），可能有识别错误，请对照原页确认。',
+        'This text comes from local OCR of a scanned / image page and may contain recognition errors; compare with the page.',
+      ),
+    ]
     if (confidence === 'high') confidence = 'medium'
     approximate = true
   }
@@ -230,6 +242,7 @@ export function materialize(doc: DocumentFacts, d: FindingDraft, policyRefs: Pol
     page,
     zone,
     snippet,
+    snippetText: d.snippetText ?? null,
     matchInSnippet,
     context,
     bboxes,
@@ -245,15 +258,6 @@ export function materialize(doc: DocumentFacts, d: FindingDraft, policyRefs: Pol
   }
 }
 
-export const ZONE_LABEL: Record<Zone, string> = {
-  authorBlock: '首页作者区',
-  header: '页眉',
-  footer: '页脚',
-  acknowledgments: '致谢',
-  references: '参考文献',
-  appendix: '附录',
-  body: '正文',
-}
 
 export const SEVERITY_RANK: Record<Severity, number> = { high: 3, medium: 2, info: 1 }
 export const CONFIDENCE_RANK: Record<Confidence, number> = { high: 3, medium: 2, low: 1 }

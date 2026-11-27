@@ -11,7 +11,8 @@ import type {
   Severity,
 } from '@/domain/types'
 import { APP_VERSION, REPORT_SCHEMA_VERSION } from '@/domain/limits'
-import { DISCLAIMER, isDismissed } from '@/domain/labels'
+import { DISCLAIMER, DOC_LABEL, formatField, isDismissed } from '@/domain/labels'
+import { type Locale, type Text, pick } from '@/domain/text'
 import { parseLink } from '@/rules/links'
 import { maskQuoted, maskText, maskUrl, maskUrlsIn } from '@/utils/safe-text'
 
@@ -22,17 +23,20 @@ export interface ReportOptions {
   hideFilenames: boolean
   /** 包含已忽略的发现（总数始终保留） */
   includeDismissed: boolean
+  /** 报告语言 */
+  locale: Locale
 }
 
 export const DEFAULT_REPORT_OPTIONS: ReportOptions = {
   redactEvidence: true,
   hideFilenames: true,
   includeDismissed: true,
+  locale: 'zh',
 }
 
 /** 报告附加信息：人工核对清单与修复前后对比（都只含条目与计数，不含稿件内容） */
 export interface ReportExtras {
-  checklist?: { items: ReadonlyArray<{ id: string; title: string }>; checked: ReadonlySet<string> }
+  checklist?: { items: ReadonlyArray<{ id: string; title: Text }>; checked: ReadonlySet<string> }
   comparison?: { fixed: number; remaining: number; added: number; reopened: number; presetChanged: boolean } | null
 }
 
@@ -91,8 +95,8 @@ export interface Report {
     pagesChecked: number
     pagesWithWeakText: number
   }
-  coverage: Array<Omit<CoverageEntry, 'documentId'> & { document: string | null }>
-  rules: ScanResult['rules']
+  coverage: Array<Omit<CoverageEntry, 'documentId' | 'reason'> & { reason: string; document: string | null }>
+  rules: Array<Omit<ScanResult['rules'][number], 'title'> & { title: string }>
   userTermCount: number
   findings: ReportFinding[]
   /** 人工核对清单；未提供时为 null */
@@ -102,14 +106,14 @@ export interface Report {
   disclaimer: string
 }
 
-function docAlias(result: ScanResult, id: string, hide: boolean): string {
-  if (id === 'src') return hide ? '源文件包' : (result.source?.name ?? '源文件包')
+function docAlias(result: ScanResult, id: string, hide: boolean, loc: Locale = 'zh'): string {
+  if (id === 'src') return hide ? pick(DOC_LABEL.src, loc) : (result.source?.name ?? pick(DOC_LABEL.src, loc))
   const doc = result.documents.find((d) => d.id === id)
   if (!doc) return id
   if (!hide) return doc.displayName
-  if (doc.role === 'main') return '主稿'
+  if (doc.role === 'main') return pick(DOC_LABEL.main, loc)
   const n = result.documents.filter((d) => d.role === 'supplement').indexOf(doc) + 1
-  return `补充材料 ${n}`
+  return loc === 'zh' ? `补充材料 ${n}` : `Supplement ${n}`
 }
 
 /** 公共平台的主机名不识别作者，保留以便读报告的人知道是哪类链接；其余主机名（机构、个人主页）打码 */
@@ -219,11 +223,14 @@ export function buildReport(
   const shown = result.findings.filter((f) => options.includeDismissed || !isDismissed(statusOf(f)))
   const redact = options.redactEvidence
   const hide = options.hideFilenames
+  const loc: Locale = options.locale ?? 'zh'
+  const tx = (t: Text | string) => pick(t, loc)
   const terms = redact ? collectSensitiveTerms(result.findings) : []
   const scrubName = (s: string) => {
     if (!hide) return s
     let out = s
-    for (const d of result.documents) if (d.displayName) out = out.split(d.displayName).join(docAlias(result, d.id, true))
+    for (const d of result.documents) if (d.displayName) out = out.split(d.displayName).join(docAlias(result, d.id, true, loc))
+    if (result.source?.name) out = out.split(result.source.name).join(docAlias(result, 'src', true, loc))
     return out
   }
 
@@ -237,18 +244,19 @@ export function buildReport(
       confidence: f.confidence,
       category: f.category,
       source: f.source,
-      document: docAlias(result, f.documentId, hide),
+      document: docAlias(result, f.documentId, hide, loc),
       documentRole: f.documentRole,
       page: f.page,
       pages,
       zone: f.zone,
-      field: f.field,
-      snippet: scrubName(redact ? redactSnippet(f, terms) : f.snippet),
+      field: f.field ? scrubName(formatField(f.field, loc) ?? f.field) : null,
+      // 合成证据（如“共 2 个保存版本”）没有可脱敏的原文时直接用当前语言的说明
+      snippet: scrubName(redact ? redactSnippet(f, terms) : f.snippetText ? tx(f.snippetText) : f.snippet),
       linkTarget: f.linkTarget ? (redact ? maskLink(f.linkTarget) : f.linkTarget) : null,
       visibleText: f.visibleText ? (redact ? maskText(f.visibleText) : f.visibleText) : null,
-      reasons: f.reasons.map((r) => scrubName(redact ? maskEmailsIn(maskUrlsIn(maskQuoted(r), keepHost)) : r)),
-      suggestion: f.suggestion,
-      policyRefs: f.policyRefs.map((p) => ({ label: p.label, url: p.url, note: p.note })),
+      reasons: f.reasons.map((r) => scrubName(redact ? maskEmailsIn(maskUrlsIn(maskQuoted(tx(r)), keepHost)) : tx(r))),
+      suggestion: tx(f.suggestion),
+      policyRefs: f.policyRefs.map((p) => ({ label: p.label, url: p.url, note: tx(p.note) })),
       matchedUserTerm: f.matchedUserTerm,
       review: d ? { status: d.status, reason: redact ? maskQuoted(d.reason) : d.reason } : null,
     }
@@ -267,39 +275,39 @@ export function buildReport(
     startedAt: result.startedAt,
     completedAt: result.completedAt,
     generatedAt: now().toISOString(),
-    options: { ...options },
+    options: { ...options, locale: loc },
     preset: {
       id: result.preset.id,
-      venue: result.preset.venue,
-      track: result.preset.track,
-      phase: result.preset.phase,
+      venue: tx(result.preset.venue),
+      track: tx(result.preset.track),
+      phase: tx(result.preset.phase),
       version: result.preset.version,
       verifiedAt: result.preset.verifiedAt,
       verificationStatus: result.preset.verificationStatus,
       implementationStatus: result.preset.implementationStatus,
       sources: result.preset.sources.map((s) => ({ ...s })),
-      limitations: [...result.preset.limitations],
+      limitations: result.preset.limitations.map(tx),
     },
     documents: result.documents.map((d, i) => ({
       // 不沿用内部 ID：调用方可能用文件名作 ID
       id: `doc-${i + 1}`,
-      name: docAlias(result, d.id, hide),
+      name: docAlias(result, d.id, hide, loc),
       role: d.role,
       pageCount: d.pageCount,
       byteSize: d.byteSize,
       parseStatus: d.parseStatus,
-      warnings: d.warnings.map(scrubName),
+      warnings: d.warnings.map((w) => scrubName(tx(w))),
     })).concat(
       result.source
         ? [
             {
               id: 'src',
-              name: docAlias(result, 'src', hide),
+              name: docAlias(result, 'src', hide, loc),
               role: 'source',
               pageCount: 0,
               byteSize: result.source.byteSize,
               parseStatus: 'completed',
-              warnings: result.source.warnings.map(scrubName),
+              warnings: result.source.warnings.map((w) => scrubName(tx(w))),
             },
           ]
         : [],
@@ -315,17 +323,17 @@ export function buildReport(
     },
     coverage: result.coverage.map(({ documentId, ...c }) => ({
       ...c,
-      reason: scrubName(c.reason),
-      document: documentId ? docAlias(result, documentId, hide) : null,
+      reason: scrubName(tx(c.reason)),
+      document: documentId ? docAlias(result, documentId, hide, loc) : null,
     })),
-    rules: result.rules.map((r) => ({ ...r })),
+    rules: result.rules.map((r) => ({ ...r, title: tx(r.title) })),
     userTermCount: result.userTermCount,
     findings,
     checklist: extras.checklist
-      ? extras.checklist.items.map((i) => ({ id: i.id, title: i.title, checked: extras.checklist!.checked.has(i.id) }))
+      ? extras.checklist.items.map((i) => ({ id: i.id, title: tx(i.title), checked: extras.checklist!.checked.has(i.id) }))
       : null,
     comparison: extras.comparison ? { ...extras.comparison } : null,
-    disclaimer: DISCLAIMER,
+    disclaimer: tx(DISCLAIMER),
   }
 }
 

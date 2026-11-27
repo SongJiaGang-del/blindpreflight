@@ -5,10 +5,12 @@ import type { Finding, FindingCategory, Severity } from '@/domain/types'
 import { CATEGORY_LABEL, SEVERITY_LABEL, isDismissed } from '@/domain/labels'
 import { useSession } from '@/app/session'
 import FindingCard from './FindingCard.vue'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{ findings: Finding[]; docLabels: Record<string, string> }>()
 const emit = defineEmits<{ select: [id: string] }>()
 const s = useSession()
+const { t, tx } = useI18n()
 
 type ReviewFilter = 'all' | 'todo' | 'resolved' | 'dismissed'
 type CompareFilter = 'all' | 'remaining' | 'added' | 'reopened'
@@ -21,29 +23,32 @@ const filter = reactive({
 })
 
 const docOptions = computed(() => [
-  { value: 'all', label: '全部文件' },
+  { value: 'all', label: t('list.allFiles') },
   ...Object.entries(props.docLabels).map(([value, label]) => ({ value, label })),
 ])
-const sevOptions = [{ value: 'all', label: '全部级别' }, ...(['high', 'medium', 'info'] as Severity[]).map((v) => ({ value: v, label: SEVERITY_LABEL[v] }))]
+const sevOptions = computed(() => [
+  { value: 'all', label: t('list.allSev') },
+  ...(['high', 'medium', 'info'] as Severity[]).map((v) => ({ value: v, label: tx(SEVERITY_LABEL[v]) })),
+])
 const catOptions = computed(() => {
   const present = new Set(props.findings.map((f) => f.category))
   return [
-    { value: 'all', label: '全部类别' },
-    ...(Object.keys(CATEGORY_LABEL) as FindingCategory[]).filter((c) => present.has(c)).map((c) => ({ value: c, label: CATEGORY_LABEL[c] })),
+    { value: 'all', label: t('list.allCat') },
+    ...(Object.keys(CATEGORY_LABEL) as FindingCategory[]).filter((c) => present.has(c)).map((c) => ({ value: c, label: tx(CATEGORY_LABEL[c]) })),
   ]
 })
-const compareOptions = [
-  { value: 'all', label: '对比：全部' },
-  { value: 'remaining', label: '仍存在' },
-  { value: 'added', label: '新增' },
-  { value: 'reopened', label: '标记已改但仍存在' },
-]
-const reviewOptions = [
-  { value: 'todo', label: '待处理' },
-  { value: 'resolved', label: '已修改' },
-  { value: 'dismissed', label: '已忽略' },
-  { value: 'all', label: '全部状态' },
-]
+const compareOptions = computed(() => [
+  { value: 'all', label: t('list.cmpAll') },
+  { value: 'remaining', label: t('list.cmpRemaining') },
+  { value: 'added', label: t('list.cmpAdded') },
+  { value: 'reopened', label: t('list.cmpReopened') },
+])
+const reviewOptions = computed(() => [
+  { value: 'todo', label: t('list.todo') },
+  { value: 'resolved', label: t('list.resolved') },
+  { value: 'dismissed', label: t('list.dismissed') },
+  { value: 'all', label: t('list.allStatus') },
+])
 
 const visible = computed(() =>
   props.findings.filter((f) => {
@@ -121,18 +126,18 @@ defineExpose({
 </script>
 
 <template>
-  <section class="list" aria-label="发现列表">
+  <section class="list" :aria-label="t('list.aria')">
     <div class="filters" :class="{ five: !!s.comparison.value }">
-      <n-select v-if="s.comparison.value" v-model:value="filter.compare" size="small" :options="compareOptions" aria-label="按对比结果筛选" data-testid="filter-compare" />
-      <n-select v-model:value="filter.doc" size="small" :options="docOptions" aria-label="按文件筛选" />
-      <n-select v-model:value="filter.severity" size="small" :options="sevOptions" aria-label="按级别筛选" data-testid="filter-severity" />
-      <n-select v-model:value="filter.category" size="small" :options="catOptions" aria-label="按类别筛选" />
-      <n-select v-model:value="filter.review" size="small" :options="reviewOptions" aria-label="按复核状态筛选" data-testid="filter-review" />
+      <n-select v-if="s.comparison.value" v-model:value="filter.compare" size="small" :options="compareOptions" :aria-label="t('list.byCompare')" data-testid="filter-compare" />
+      <n-select v-model:value="filter.doc" size="small" :options="docOptions" :aria-label="t('list.byFile')" />
+      <n-select v-model:value="filter.severity" size="small" :options="sevOptions" :aria-label="t('list.bySev')" data-testid="filter-severity" />
+      <n-select v-model:value="filter.category" size="small" :options="catOptions" :aria-label="t('list.byCat')" />
+      <n-select v-model:value="filter.review" size="small" :options="reviewOptions" :aria-label="t('list.byReview')" data-testid="filter-review" />
     </div>
     <div class="count">
-      <span>显示 {{ visible.length }} / {{ findings.length }} 条</span>
-      <n-button v-if="filtered" text size="tiny" type="primary" @click="reset">显示全部</n-button>
-      <span class="kbd-hint"><kbd>J</kbd> <kbd>K</kbd> 切换 · <kbd>R</kbd> 已修改 · <kbd>?</kbd> 快捷键</span>
+      <span>{{ t('list.count', { a: visible.length, b: findings.length }) }}</span>
+      <n-button v-if="filtered" text size="tiny" type="primary" @click="reset">{{ t('list.showAll') }}</n-button>
+      <span class="kbd-hint"><kbd>J</kbd> <kbd>K</kbd> {{ t('list.kbd', { r: 'R', q: '?' }) }}</span>
     </div>
     <div v-if="visible.length" ref="cardsEl" class="cards" data-testid="finding-list">
       <FindingCard
@@ -144,9 +149,9 @@ defineExpose({
         @select="emit('select', f.id)"
       />
     </div>
-    <n-empty v-else :description="findings.length ? '当前筛选条件下没有发现' : '没有发现需要处理的问题'" class="empty">
+    <n-empty v-else :description="findings.length ? t('list.emptyFiltered') : t('list.emptyAll')" class="empty">
       <template v-if="findings.length && filtered" #extra>
-        <n-button size="small" @click="reset">清除筛选</n-button>
+        <n-button size="small" @click="reset">{{ t('list.clear') }}</n-button>
       </template>
     </n-empty>
   </section>
